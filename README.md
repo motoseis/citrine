@@ -15,7 +15,7 @@ Citrine is a free, open-source non-linear video editor. It is a fork of [Amber V
 - **GPU:** OpenGL 3.2+. Vulkan/Metal/D3D12 used when available.
 - **CPU:** any x86-64 processor.
 - **RAM:** 512 MB free for simple edits; more helps with long timelines and high-res footage.
-- **Linux:** Arch natively (PKGBUILD), everything else via AppImage (bundles Qt 6.10).
+- **Linux:** Arch natively (PKGBUILD); Ubuntu and Kubuntu from source (see [documentation/prerequisites-ubuntu.md](documentation/prerequisites-ubuntu.md)); other distributions via AppImage (bundles Qt 6.10).
 - **Windows:** 10 or newer. **macOS:** Apple Silicon; Intel Macs untested.
 
 ## Build
@@ -44,7 +44,7 @@ docker run --rm citrine-win64 cat /out/amber-setup.exe > amber-setup.exe
 
 **Dependencies:** Qt 6.10+ (Core, Gui, GuiPrivate, Widgets, Multimedia, OpenGL, OpenGLWidgets, ShaderTools, ShaderToolsPrivate, Svg, LinguistTools), FFmpeg 3.4–8 (avutil, avcodec, avformat, avfilter, swscale, swresample).
 
-For detailed build instructions for **Fedora Linux 44**, see [documentation/prerequisites-fedora.md](documentation/prerequisites-fedora.md).
+For detailed build instructions, see [documentation/prerequisites-fedora.md](documentation/prerequisites-fedora.md) for **Fedora Linux 44** and [documentation/prerequisites-ubuntu.md](documentation/prerequisites-ubuntu.md) for **Ubuntu and Kubuntu**.
 
 ## License
 
