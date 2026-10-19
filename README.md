@@ -1,43 +1,22 @@
-# Amber Video Editor
+# Citrine Video Editor
 
-A free, open-source non-linear video editor built for speed and intuitivity. Sub-5 MB binary by standing on the shoulders of giants — runs on hardware that heavier NLEs have left behind.
-
-Amber picks up where the amazing [Olive 0.1](https://github.com/olive-editor/olive) stopped in 2019. The entire rendering stack has been rebuilt (Qt RHI, FFmpeg 7/8, GPU decode), and active development continues toward 2.0.
-
-> **AI-MAINTAINED CODEBASE**
->
-> The original architecture, UX design, and rendering pipeline that make Amber so lightweight were hand-written by [MattKC](https://github.com/itsmattkc) and the Olive team back in 2019. That foundation is the real engineering. Everything since — the Qt 6 port, the RHI renderer, bug fixes, new features — is just human-assisted. If you are rebutted by this approach, I would respect your opinion, but I prefered an AI-revival over nothing at all.
-
-![screen](.github/amber.jpg)
+Citrine is a free, open-source non-linear video editor. It is a fork of [Amber Video Editor](https://github.com/baptisterajaut/amber), which continues [Olive 0.1](https://github.com/olive-editor/olive).
 
 ## Features
 
 - **Multi-track timeline** with clip splitting, ripple/rolling/slip/slide tools, transitions, and keyframe animation
-- **GPU-accelerated rendering** via Qt RHI (Vulkan, Metal, D3D12, OpenGL fallback) — no raw OpenGL calls in the codebase
-- **Hardware video decoding** (VAAPI, D3D11VA, VideoToolbox) — enabled by default, software fallback automatic
+- **GPU-accelerated rendering** via Qt RHI (Vulkan, Metal, D3D12, OpenGL fallback)
+- **Hardware video decoding** (VAAPI, D3D11VA, VideoToolbox), with automatic software fallback
+- **Proxy media** generated automatically for imported and opened footage
 - **Frei0r plugin support**
 
 ## Minimum requirements
 
-- **GPU:** OpenGL 3.2+ (Intel HD / Sandy Bridge 2011+, any discrete GPU from the last 15 years). Vulkan/Metal/D3D12 used when available.
+- **GPU:** OpenGL 3.2+. Vulkan/Metal/D3D12 used when available.
 - **CPU:** any x86-64 processor.
 - **RAM:** 512 MB free for simple edits; more helps with long timelines and high-res footage.
 - **Linux:** Arch natively (PKGBUILD), everything else via AppImage (bundles Qt 6.10).
 - **Windows:** 10 or newer. **macOS:** Apple Silicon; Intel Macs untested.
-
-For GPUs older than OpenGL 3.2, use [version 1.1.0](https://github.com/baptisterajaut/amber/releases/tag/v1.1.0) (legacy OpenGL 2.x renderer).
-
-## Roadmap
-
-1.x is the stable line: it keeps getting fixes, and new features still land there (1.6 and 1.7 brought color labels, text stroke, gradients and a unified timeline). 2.0 is in active development: GPU-native effects, ShaderToy import, scopes, 3-point editing and a rendering pipeline overhaul. See [ROADMAP.md](ROADMAP.md).
-
-## 2.0 Preview
-
-A pre-alpha build of Amber 2.0 is published as the [Amber 2.0 Preview](https://github.com/baptisterajaut/amber/releases/tag/v2.0.0-preview) prerelease and rebuilt from the `2.0.x` branch as it moves. On top of a reworked, GPU-tested engine it already has a few things 1.x doesn't: an undo history with times, gradient-filled text, vertical sequence presets, a richer clip tooltip and an action search that ranks your most-used commands first. The full list, and what is still missing, is in [What's new in 2.0](https://github.com/baptisterajaut/amber/blob/2.0.x/WHATS_NEW_2.0.md). Use 1.x for real projects.
-
-## Packages
-
-Pre-built packages for Windows, Linux (AppImage) and macOS on the [Releases](https://github.com/baptisterajaut/amber/releases) page. Arch Linux: `makepkg -si` from `packaging/linux/PKGBUILD`. Tested on Arch only; other builds are best-effort.
 
 ## Build
 
@@ -59,14 +38,14 @@ cd packaging/linux && makepkg -si
 docker buildx build -f packaging/linux/appimage.dockerfile --output type=local,dest=./out .
 
 # Docker — Windows NSIS installer (cross-compiled from Fedora)
-docker build -f packaging/windows/cross-compile.dockerfile --target package -t amber-win64 .
-docker run --rm amber-win64 cat /out/amber-setup.exe > amber-setup.exe
+docker build -f packaging/windows/cross-compile.dockerfile --target package -t citrine-win64 .
+docker run --rm citrine-win64 cat /out/amber-setup.exe > amber-setup.exe
 ```
 
 **Dependencies:** Qt 6.10+ (Core, Gui, GuiPrivate, Widgets, Multimedia, OpenGL, OpenGLWidgets, ShaderTools, ShaderToolsPrivate, Svg, LinguistTools), FFmpeg 3.4–8 (avutil, avcodec, avformat, avfilter, swscale, swresample).
 
-For detailed build instructions for **Fedora Linux 44**, check out [documentation/prerequisites-fedora.md](documentation/prerequisites-fedora.md)!
+For detailed build instructions for **Fedora Linux 44**, see [documentation/prerequisites-fedora.md](documentation/prerequisites-fedora.md).
 
 ## License
 
-GPLv3. Based on [olive-editor/olive](https://github.com/olive-editor/olive) by [MattKC](https://github.com/itsmattkc) and the Olive Team.
+GPLv3. Based on [Amber Video Editor](https://github.com/baptisterajaut/amber), [olive-editor/olive](https://github.com/olive-editor/olive) by [MattKC](https://github.com/itsmattkc) and the Olive Team.
