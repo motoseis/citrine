@@ -27,6 +27,21 @@
 #include "project/projectmodel.h"
 #include "engine/sequence.h"
 
+#include <QFile>
+
+static void remove_proxy_files(Media* m) {
+  if (m->get_type() == MEDIA_TYPE_FOOTAGE) {
+    Footage* f = m->to_footage();
+    if (!f->proxy_path.isEmpty()) QFile::remove(f->proxy_path);
+    f->proxy = false;
+    f->proxy_path.clear();
+  }
+
+  for (int i = 0; i < m->childCount(); i++) {
+    remove_proxy_files(m->child(i));
+  }
+}
+
 AddMediaCommand::AddMediaCommand(MediaPtr iitem, Media *iparent) :
   item(std::move(iitem)),
   parent(iparent)
@@ -68,6 +83,7 @@ void DeleteMediaCommand::doRedo() {
     qWarning() << "DeleteMediaCommand::doRedo: parent is null";
     return;
   }
+  remove_proxy_files(item.get());
   amber::project_model.removeChild(parent, item.get());
 }
 
