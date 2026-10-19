@@ -350,13 +350,13 @@ QVariant Media::data(int column, int role) {
         if (has_proxy) {
           p.setPen(Qt::NoPen);
           p.setBrush(QColor(40, 120, 200));
-          p.drawRoundedRect(1, 1, 11, 11, 2, 2);
+          p.drawRoundedRect(1, 1, 18, 18, 4, 4);
           p.setPen(Qt::white);
           QFont badge_font = p.font();
-          badge_font.setPixelSize(9);
+          badge_font.setPixelSize(13);
           badge_font.setBold(true);
           p.setFont(badge_font);
-          p.drawText(QRect(1, 1, 11, 11), Qt::AlignCenter, QStringLiteral("P"));
+          p.drawText(QRect(1, 1, 18, 18), Qt::AlignCenter, QStringLiteral("P"));
         }
         if (show_color_label) {
           p.fillRect(px.width() - 7, px.height() - 7, 6, 6, amber::GetColorLabel(color_label_));
