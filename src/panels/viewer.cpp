@@ -324,7 +324,9 @@ void Viewer::go_to_start() {
 }
 
 void Viewer::go_to_end() {
-  if (seq != nullptr) seek(qMax(0L, seq->getEndFrame() - 1));
+  if (seq == nullptr) return;
+  seek(qMax(0L, seq->getEndFrame() - 1));
+  if (main_sequence) center_scroll_to_playhead(panel_timeline->horizontalScrollBar, panel_timeline->zoom, seq->playhead);
 }
 
 void Viewer::close_media() { set_media(nullptr); }

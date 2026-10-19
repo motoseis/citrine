@@ -356,8 +356,7 @@ void Timeline::UpdateTitle() {
 }
 
 void Timeline::set_sb_max() {
-  headers->set_scrollbar_max(horizontalScrollBar, amber::ActiveSequence->getEndFrame(),
-                             editAreas->width() - getScreenPointFromFrame(zoom, 200));
+  headers->set_scrollbar_max(horizontalScrollBar, amber::ActiveSequence->getEndFrame(), editAreas->width() / 2);
 }
 
 void Timeline::set_marker() {

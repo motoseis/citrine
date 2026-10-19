@@ -13,6 +13,8 @@ Citrine is a fork of Amber Video Editor. This roadmap lists what has shipped and
 - Global proxy generation: configured in Preferences, created automatically for imported and opened footage, ProRes Proxy format, "P" badge in the Project panel, and "Regenerate Proxy" and "Restore Original" in the Proxy menu
 - Mouse wheel pans the timeline; Ctrl+wheel zooms (controlled by the Scroll Wheel Zooms preference)
 - Dragging footage into a sequence centres the view on the sequence end
+- The End key and button centre the timeline on the sequence end
+- The timeline can scroll the sequence end to the middle of the window
 
 ### Carried over from Amber 1.x
 
