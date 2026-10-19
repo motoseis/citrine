@@ -45,6 +45,7 @@
 #include "engine/undo/undostack.h"
 #include "ui/viewerwidget.h"
 #include "ui/resizablescrollbar.h"
+#include "ui/timelineheader.h"
 #include "dialogs/newsequencedialog.h"
 #include "mainwindow.h"
 #include "ui/rectangleselect.h"
@@ -158,6 +159,7 @@ void TimelineWidget::dragEnterEvent(QDragEnterEvent *event) {
       self_created_sequence = create_sequence_from_media(media_list);
       seq = self_created_sequence.get();
     } else {
+      center_scroll_to_playhead(panel_timeline->horizontalScrollBar, panel_timeline->zoom, seq->getEndFrame());
       entry_point = panel_timeline->getTimelineFrameFromScreenPoint(event->position().toPoint().x());
       panel_timeline->drag_frame_start = entry_point + getFrameFromScreenPoint(panel_timeline->zoom, 50);
       // Use the scroll-aware lookup; collapse to V1 (-1) or A1 (0) based on which side the cursor lies on.
@@ -202,11 +204,8 @@ void TimelineWidget::wheelEvent(QWheelEvent *event) {
   // Trackpads provide native 2D scrolling — never auto-swap axes for them,
   // only honor explicit Shift toggle.  Mouse wheels only have vertical
   // scroll, so the config swap maps vertical to horizontal panning.
-  // Use device type (works on both Wayland and X11/XInput2) with pixelDelta
-  // as fallback (populated on Wayland even for generic device types).
-  bool is_trackpad = (event->device()
-                      && event->device()->type() == QInputDevice::DeviceType::TouchPad)
-                     || !event->pixelDelta().isNull();
+  bool is_trackpad = event->device()
+                     && event->device()->type() == QInputDevice::DeviceType::TouchPad;
   bool cfg_swap = is_trackpad ? false : amber::CurrentConfig.invert_timeline_scroll_axes;
 
   // Allow shift for axis swap, but don't swap on zoom... Unless
