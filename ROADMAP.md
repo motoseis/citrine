@@ -27,7 +27,6 @@ Citrine is a fork of Amber Video Editor. This roadmap lists what has shipped and
 - Restore Original is undone when a project is reopened, because proxies are regenerated automatically and there is no way to tell "restored" from "never proxied".
 - Auto-generated proxies do not mark the project as modified, so their paths may not be saved until the next save.
 - Regenerating a proxy overwrites the file even if an open clip is still reading it.
-- The last few frames of a proxy may be dropped, because the decoder is not flushed at the end of the input.
 - Proxy size is not checked for odd dimensions, which ProRes can reject.
 - The cacher's stream-index mapping may shift when non-audio/video streams are dropped.
 - The translation files in `src/ts/` are out of date with the proxy menu changes; run `lupdate` to refresh them.

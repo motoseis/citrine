@@ -256,28 +256,7 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
 
   int64_t total_duration = input_fmt_ctx->duration > 0 ? input_fmt_ctx->duration : 1;
 
-  while (!skip && av_read_frame(input_fmt_ctx, packet) >= 0) {
-    int stream_index = packet->stream_index;
-
-    if (out_index[stream_index] < 0) {
-      av_packet_unref(packet);
-      continue;
-    }
-
-    if (input_streams.at(stream_index) == nullptr) {
-      // Audio passthrough
-      av_packet_rescale_ts(packet, input_fmt_ctx->streams[stream_index]->time_base,
-                           output_fmt_ctx->streams[out_index[stream_index]]->time_base);
-      packet->stream_index = out_index[stream_index];
-      packet->pos = -1;
-      av_interleaved_write_frame(output_fmt_ctx, packet);
-      av_packet_unref(packet);
-      continue;
-    }
-
-    avcodec_send_packet(input_streams.at(stream_index), packet);
-    av_packet_unref(packet);
-
+  auto encode_decoded_frames = [&](int stream_index) {
     while (avcodec_receive_frame(input_streams.at(stream_index), dec_frame) >= 0) {
       current_progress = qBound(0.0, double(dec_frame->pts) / double(total_duration) * 100.0, 100.0);
 
@@ -313,8 +292,41 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
       }
       av_packet_free(&out_pkt);
     }
+  };
+
+  while (!skip && av_read_frame(input_fmt_ctx, packet) >= 0) {
+    int stream_index = packet->stream_index;
+
+    if (out_index[stream_index] < 0) {
+      av_packet_unref(packet);
+      continue;
+    }
+
+    if (input_streams.at(stream_index) == nullptr) {
+      // Audio passthrough
+      av_packet_rescale_ts(packet, input_fmt_ctx->streams[stream_index]->time_base,
+                           output_fmt_ctx->streams[out_index[stream_index]]->time_base);
+      packet->stream_index = out_index[stream_index];
+      packet->pos = -1;
+      av_interleaved_write_frame(output_fmt_ctx, packet);
+      av_packet_unref(packet);
+      continue;
+    }
+
+    avcodec_send_packet(input_streams.at(stream_index), packet);
+    av_packet_unref(packet);
+
+    encode_decoded_frames(stream_index);
 
     if (skip) break;
+  }
+
+  if (!skip) {
+    for (int i = 0; i < nb_streams; i++) {
+      if (input_streams.at(i) == nullptr) continue;
+      avcodec_send_packet(input_streams.at(i), nullptr);
+      encode_decoded_frames(i);
+    }
   }
 
   bool success = false;
