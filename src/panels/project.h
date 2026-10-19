@@ -72,6 +72,9 @@ public:
 
   void save_project(bool autorecovery);
 
+  void LoadLayoutState(const QByteArray& data) override;
+  QByteArray SaveLayoutState() override;
+
   MediaPtr create_folder_internal(QString name);
 
   Media* item_to_media(const QModelIndex& index);
@@ -118,7 +121,8 @@ private:
   QLineEdit* toolbar_search;
 
   QWidget* toolbar_widget;
-  SourceTable* tree_view;
+  SourceTable* tree_view{nullptr};
+  QByteArray tree_header_state;
   SourceIconView* icon_view;
 
   ProjectFilter sorter;

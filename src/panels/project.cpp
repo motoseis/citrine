@@ -27,6 +27,7 @@ extern "C" {
 
 #include <QApplication>
 #include <QFileDialog>
+#include <QHeaderView>
 #include <QString>
 #include <QVariant>
 
@@ -216,9 +217,15 @@ Project::Project(QWidget* parent) : Panel(parent), sorter(this), sources_common(
   Retranslate();
 }
 
-void Project::ConnectFilterToModel() { sorter.setSourceModel(&amber::project_model); }
+void Project::ConnectFilterToModel() {
+  sorter.setSourceModel(&amber::project_model);
+  if (tree_view && !tree_header_state.isEmpty()) tree_view->header()->restoreState(tree_header_state);
+}
 
-void Project::DisconnectFilterToModel() { sorter.setSourceModel(nullptr); }
+void Project::DisconnectFilterToModel() {
+  if (tree_view) tree_header_state = tree_view->header()->saveState();
+  sorter.setSourceModel(nullptr);
+}
 
 void Project::Retranslate() {
   toolbar_search->setPlaceholderText(tr("Search media, markers, etc."));
@@ -1417,6 +1424,16 @@ void Project::update_view_type() {
 void Project::set_icon_view() {
   amber::CurrentConfig.project_view_type = amber::PROJECT_VIEW_ICON;
   update_view_type();
+}
+
+void Project::LoadLayoutState(const QByteArray& data) {
+  tree_header_state = data;
+  tree_view->header()->restoreState(data);
+}
+
+QByteArray Project::SaveLayoutState() {
+  if (sorter.sourceModel()) tree_header_state = tree_view->header()->saveState();
+  return tree_header_state;
 }
 
 void Project::set_list_view() {
