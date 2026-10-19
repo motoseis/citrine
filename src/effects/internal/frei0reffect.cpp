@@ -1,0 +1,261 @@
+/***
+
+    Olive - Non-Linear Video Editor
+    Copyright (C) 2019  Olive Team
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+***/
+
+#include "frei0reffect.h"
+
+#ifndef NOFREI0R
+
+#include <QMessageBox>
+#include <QDir>
+#include <QHash>
+#include <QMutex>
+
+#include "engine/clip.h"
+
+using f0rConstructFunc = f0r_instance_t (*)(unsigned int width, unsigned int height);
+using f0rInitFunc = int (*) ();
+using f0rDeinitFunc = void (*) ();
+using f0rUpdateFunc = void (*) (f0r_instance_t instance,
+            double time, const uint32_t* inframe, uint32_t* outframe);
+using f0rDestructFunc = void (*)(f0r_instance_t instance);
+using f0rGetPluginInfo = void (*)(f0r_plugin_info_t* info);
+using f0rSetParamValue = void (*) (f0r_instance_t instance,
+        f0r_param_t param, int param_index);
+
+// Frei0r spec: f0r_init / f0r_deinit must be called exactly once per plugin library.
+// Instances sharing a library must not re-init or double-deinit.
+// Heap-allocated and never freed to survive static destruction order during app exit.
+static QMutex& frei0r_refcount_mutex() { static auto* m = new QMutex(); return *m; }
+static QHash<QString, int>& frei0r_refcount() { static auto* h = new QHash<QString, int>(); return *h; }
+
+Frei0rEffect::Frei0rEffect(Clip* c, const EffectMeta *em) :
+  Effect(c, em)
+  
+{
+  SetFlags(ImageFlag);
+
+  // Windows DLL loading routine
+  QString dll_fn = QDir(em->path).filePath(em->filename);
+
+  handle.setFileName(dll_fn);
+
+
+  if (!handle.load()) {
+    QString dll_error = handle.errorString();
+    QMessageBox::critical(nullptr, tr("Error loading Frei0r plugin"),
+                          tr("Failed to load Frei0r plugin \"%1\": %2").arg(dll_fn, dll_error));
+
+    return;
+  }
+
+  f0rInitFunc init = reinterpret_cast<f0rInitFunc>(handle.resolve("f0r_init"));
+  if (init == nullptr) {
+    QMessageBox::critical(nullptr, tr("Error loading Frei0r plugin"),
+                          tr("Symbol f0r_init not found in \"%1\"").arg(dll_fn));
+    return;
+  }
+  {
+    QMutexLocker lock(&frei0r_refcount_mutex());
+    auto& map = frei0r_refcount();
+    if (map.value(dll_fn, 0) == 0) init();
+    map[dll_fn] = map.value(dll_fn, 0) + 1;
+  }
+
+  construct_module();
+
+  f0r_plugin_info_t info;
+  f0rGetPluginInfo info_func = reinterpret_cast<f0rGetPluginInfo>(handle.resolve("f0r_get_plugin_info"));
+  if (info_func == nullptr) {
+    QMessageBox::critical(nullptr, tr("Error loading Frei0r plugin"),
+                          tr("Symbol f0r_get_plugin_info not found in \"%1\"").arg(dll_fn));
+    return;
+  }
+  info_func(&info);
+
+  param_count = info.num_params;
+
+  get_param_info = reinterpret_cast<f0rGetParamInfo>(handle.resolve("f0r_get_param_info"));
+  for (int i=0;i<param_count;i++) {
+    f0r_param_info_t param_info;
+    get_param_info(&param_info, i);
+
+    if (param_info.type >= 0 && param_info.type <= F0R_PARAM_STRING) {
+      EffectRow* row = new EffectRow(this, param_info.name);
+      switch (param_info.type) {
+      case F0R_PARAM_BOOL:
+        new BoolField(row, QString::number(i));
+        break;
+      case F0R_PARAM_DOUBLE:
+      {
+        DoubleField* f = new DoubleField(row, QString::number(i));
+        f->SetMinimum(0);
+        f->SetMaximum(100);
+      }
+        break;
+      case F0R_PARAM_COLOR:
+        new ColorField(row, QString::number(i));
+        break;
+      case F0R_PARAM_POSITION:
+      {
+        DoubleField* fx = new DoubleField(row, QString("%1X").arg(QString::number(i)));
+        fx->SetMinimum(0);
+        fx->SetMaximum(100);
+        DoubleField* fy = new DoubleField(row, QString("%1Y").arg(QString::number(i)));
+        fy->SetMinimum(0);
+        fy->SetMaximum(100);
+      }
+        break;
+      case F0R_PARAM_STRING:
+        new StringField(row, QString::number(i), false);
+        break;
+      }
+    }
+  }
+}
+
+Frei0rEffect::~Frei0rEffect() {
+  destruct_module();
+
+  if (handle.isLoaded()) {
+    QString path = handle.fileName();
+    bool last;
+    {
+      QMutexLocker lock(&frei0r_refcount_mutex());
+      auto& map = frei0r_refcount();
+      int& cnt = map[path];
+      if (cnt > 0) cnt--;
+      last = (cnt == 0);
+      if (last) map.remove(path);
+    }
+    if (last) {
+      f0rDeinitFunc deinit = reinterpret_cast<f0rDeinitFunc>(handle.resolve("f0r_deinit"));
+      if (deinit != nullptr) deinit();
+    }
+
+    handle.unload();
+  }
+}
+
+void Frei0rEffect::process_image(double timecode, uint8_t *input, uint8_t *output, int) {
+  // Reconstruct Frei0r instance if clip dimensions changed since construction
+  // (e.g., effect was created during project load before media was analyzed)
+  int w = parent_clip->media_width();
+  int h = parent_clip->media_height();
+  if (w <= 0 || h <= 0) return;
+  if (w != instance_width || h != instance_height) {
+    destruct_module();
+    construct_module();
+  }
+
+  // construct_module() leaves open=false (and instance untouched/null) when f0r_construct
+  // is missing or returns null
+  if (!open || instance == nullptr) return;
+
+  f0rUpdateFunc update_func = reinterpret_cast<f0rUpdateFunc>(handle.resolve("f0r_update"));
+  if (update_func == nullptr) return;
+
+  f0rSetParamValue set_param = reinterpret_cast<f0rSetParamValue>(handle.resolve("f0r_set_param_value"));
+  if (set_param == nullptr) return;
+
+  for (int i=0, row_idx=0; i<param_count; i++) {
+    f0r_param_info_t param_info;
+    get_param_info(&param_info, i);
+
+    if (param_info.type < 0 || param_info.type > F0R_PARAM_STRING) continue;
+
+    EffectRow* param_row = row(row_idx++);
+
+    switch (param_info.type) {
+    case F0R_PARAM_BOOL:
+    {
+      double b = param_row->Field(0)->GetValueAt(timecode).toBool() ? 1.0 : 0.0;
+      set_param(instance, &b, i);
+    }
+      break;
+    case F0R_PARAM_DOUBLE:
+    {
+      double d = param_row->Field(0)->GetValueAt(timecode).toDouble()*0.01;
+      set_param(instance, &d, i);
+    }
+      break;
+    case F0R_PARAM_COLOR:
+    {
+      QColor qcolor = param_row->Field(0)->GetValueAt(timecode).value<QColor>();
+
+      f0r_param_color fcolor;
+      fcolor.r = float(qcolor.redF());
+      fcolor.g = float(qcolor.greenF());
+      fcolor.b = float(qcolor.blueF());
+
+      set_param(instance, &fcolor, i);
+    }
+      break;
+    case F0R_PARAM_POSITION:
+    {
+      f0r_param_position pos;
+      pos.x = param_row->Field(0)->GetValueAt(timecode).toDouble();
+      pos.y = param_row->Field(1)->GetValueAt(timecode).toDouble();
+      set_param(instance, &pos, i);
+    }
+      break;
+    case F0R_PARAM_STRING:
+    {
+      QByteArray bytes = param_row->Field(0)->GetValueAt(timecode).toString().toUtf8();
+      char* byte_data = bytes.data();
+      set_param(instance, &byte_data, i);
+    }
+      break;
+    }
+  }
+
+  update_func(instance, timecode, reinterpret_cast<uint32_t*>(input), reinterpret_cast<uint32_t*>(output));
+}
+
+void Frei0rEffect::refresh() {
+  destruct_module();
+  construct_module();
+}
+
+void Frei0rEffect::destruct_module() {
+  if (open) {
+    f0rDestructFunc destruct = reinterpret_cast<f0rDestructFunc>(handle.resolve("f0r_destruct"));
+    if (destruct != nullptr) destruct(instance);
+
+    open = false;
+    instance = nullptr;
+  }
+}
+
+void Frei0rEffect::construct_module() {
+  instance_width = parent_clip->media_width();
+  instance_height = parent_clip->media_height();
+
+  f0rConstructFunc construct = reinterpret_cast<f0rConstructFunc>(handle.resolve("f0r_construct"));
+  if (construct == nullptr) return;
+  instance = construct(instance_width, instance_height);
+
+  if (instance == nullptr) {
+    qWarning() << "Frei0r: f0r_construct returned null for" << meta->name;
+    return;
+  }
+  open = true;
+}
+
+#endif

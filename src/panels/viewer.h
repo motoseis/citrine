@@ -1,0 +1,191 @@
+/***
+
+    Olive - Non-Linear Video Editor
+    Copyright (C) 2019  Olive Team
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+***/
+
+#ifndef VIEWER_H
+#define VIEWER_H
+
+#include <QElapsedTimer>
+#include <QIcon>
+#include <QLabel>
+#include <QPushButton>
+#include <QTimer>
+#include <QToolButton>
+
+#include "project/media.h"
+#include "timeline/marker.h"
+#include "timeline/mediaimportdata.h"
+
+#include "ui/labelslider.h"
+#include "ui/panel.h"
+#include "ui/resizablescrollbar.h"
+#include "ui/timelineheader.h"
+#include "ui/timelinewidget.h"
+#include "ui/viewerwidget.h"
+
+bool frame_rate_is_droppable(double rate);
+long timecode_to_frame(const QString& s, int view, double frame_rate);
+QString frame_to_timecode(long f, int view, double frame_rate);
+
+class Viewer : public Panel {
+  Q_OBJECT
+
+ public:
+  explicit Viewer(QWidget* parent = nullptr);
+  ~Viewer() override;
+
+  bool is_focused();
+  bool is_main_sequence();
+  void set_main_sequence();
+  void set_media(Media* m);
+  void compose();
+  void set_playpause_icon(bool play);
+  void update_playhead_timecode(long p);
+  void update_end_timecode();
+  void update_header_zoom();
+  void clear_in();
+  void clear_out();
+  void clear_inout_point();
+  void set_in_point();
+  void set_out_point();
+  void set_zoom(bool in);
+  void set_panel_name(const QString& n);
+  void show_videoaudio_buttons(bool s);
+  void update_preview_res_label();
+
+  // playback functions
+  void seek(long p, bool scrub_audio = true);
+  void play(bool in_to_out = false);
+  void pause(bool clear_buffer = true);
+  bool playing{false};
+  // One-shot hint set by single-step actions (arrow keys, prev/next frame buttons)
+  // so the next render fetches the exact frame instead of falling back to the
+  // scrubbing fast-bail path. Consumed (cleared) by ViewerWidget::frame_update().
+  bool precise_next_render_{false};
+  long playhead_start;
+  qint64 start_msecs;
+  QTimer playback_updater;
+
+  void cue_recording(long start, long end, int track);
+  void uncue_recording();
+  bool is_recording_cued();
+  long recording_start;
+  long recording_end;
+  int recording_track;
+
+  // Pre-roll countdown state. Read by ViewerOverlay::paintEvent to draw the
+  // 3,2,1 countdown overlay before voice-over recording actually starts.
+  int preroll_seconds_left{0};
+
+  void reset_all_audio();
+  void update_parents(bool reload_fx = false, bool scrubbing = false);
+
+  int get_playback_speed();
+
+  ViewerWidget* viewer_widget;
+
+  Media* media{nullptr};
+  SequencePtr seq;
+  QVector<Marker>* marker_ref{nullptr};
+
+  void set_marker();
+
+  TimelineHeader* headers;
+
+  void initiate_drag(amber::timeline::MediaImportType drag_type);
+
+  void Retranslate() override;
+
+ protected:
+  void resizeEvent(QResizeEvent* event) override;
+
+ public slots:
+  void play_wake();
+  void go_to_start();
+  void go_to_in();
+  void previous_frame();
+  void toggle_play();
+  void increase_speed();
+  void decrease_speed();
+  void next_frame();
+  void previous_frames();
+  void next_frames();
+  void go_to_out();
+  void go_to_end();
+  void close_media();
+  void update_viewer();
+
+ private slots:
+  void update_playhead();
+  void timer_update();
+  void recording_flasher_update();
+  void preroll_tick();
+  void resize_move(double d);
+
+  void drag_video_only();
+  void drag_audio_only();
+  void set_preview_resolution(QAction* action);
+
+ private:
+  void update_window_title();
+  void clean_created_seq();
+  void set_sequence(bool main, SequencePtr s);
+  bool main_sequence;
+  bool created_sequence{false};
+  long cached_end_frame;
+  QString panel_name;
+  double minimum_zoom{1.0};
+  bool playing_in_to_out;
+  long last_playhead;
+  void set_zoom_value(double d);
+  void set_sb_max();
+  void set_playback_speed(int s);
+
+  long get_seq_in();
+  long get_seq_out();
+
+  void setup_ui();
+
+  ResizableScrollBar* horizontal_bar;
+  ViewerContainer* viewer_container;
+  LabelSlider* current_timecode_slider;
+  QLabel* end_timecode;
+
+  QPushButton* go_to_start_button;
+  QPushButton* prev_frame_button;
+  QPushButton* play_button;
+  QPushButton* next_frame_button;
+  QPushButton* go_to_end_frame;
+
+  QPushButton* video_only_button;
+  QPushButton* audio_only_button;
+  QToolButton* preview_res_button_;
+
+  bool cue_recording_internal{false};
+  QTimer recording_flasher;
+  QTimer preroll_timer;
+
+  long previous_playhead;
+  int playback_speed{0};
+
+  QElapsedTimer scrub_elapsed_;
+  bool scrub_elapsed_valid_{false};
+};
+
+#endif  // VIEWER_H

@@ -1,0 +1,38 @@
+pkgname=amber-editor
+pkgver=1.7.10
+pkgrel=1
+pkgdesc='Professional open-source non-linear video editor'
+arch=('x86_64')
+url='https://github.com/baptisterajaut/amber'
+license=('GPL3')
+depends=(
+  'qt6-base'
+  'qt6-multimedia'
+  'qt6-svg'
+  'ffmpeg'
+  'frei0r-plugins'
+)
+makedepends=(
+  'cmake'
+  'qt6-tools'
+  'vulkan-headers'
+)
+# vulkan-headers enables the Vulkan RHI backend in the binary. On systems
+# without a Vulkan ICD the backend falls back to OpenGL at runtime, so this
+# is effectively free for old GPUs. Matches the AppImage build.
+conflicts=('olive')
+source=("git+https://github.com/baptisterajaut/amber.git#tag=v$pkgver")
+sha256sums=('SKIP')
+
+build() {
+  cmake -B build -S amber/src \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DAMBER_VERSION="$pkgver"
+  cmake --build build -j$(nproc)
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 amber/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

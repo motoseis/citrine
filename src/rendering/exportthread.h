@@ -1,0 +1,139 @@
+/***
+
+    Olive - Non-Linear Video Editor
+    Copyright (C) 2019  Olive Team
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+***/
+
+#ifndef EXPORTTHREAD_H
+#define EXPORTTHREAD_H
+
+#include <atomic>
+#include <QThread>
+#include <QMutex>
+#include <QOffscreenSurface>
+#include <QWaitCondition>
+
+struct AVFormatContext;
+struct AVCodecContext;
+struct AVFrame;
+struct AVPacket;
+struct AVStream;
+struct AVCodec;
+struct SwsContext;
+struct SwrContext;
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+}
+
+#define COMPRESSION_TYPE_CBR 0
+#define COMPRESSION_TYPE_CFR 1
+#define COMPRESSION_TYPE_TARGETSIZE 2
+#define COMPRESSION_TYPE_TARGETBR 3
+
+// structs that store parameters passed from the export dialogs to this thread
+
+struct ExportParams {
+  // export parameters
+  QString filename;
+  bool video_enabled;
+  int video_codec;
+  int video_width;
+  int video_height;
+  double video_frame_rate;
+  int video_compression_type;
+  double video_bitrate;
+  bool audio_enabled;
+  int audio_codec;
+  int audio_sampling_rate;
+  int audio_bitrate;
+  long start_frame;
+  long end_frame;
+};
+
+struct VideoCodecParams {
+  int pix_fmt;
+  int threads;
+};
+
+class ExportThread : public QThread {
+  Q_OBJECT
+public:
+  ExportThread(const ExportParams& params, const VideoCodecParams& vparams, QObject* parent = nullptr);
+  void run() override;
+
+  // Pre-created GL fallback surface (created on GUI thread, passed through to
+  // the internal RenderThread).  ExportThread does NOT take ownership.
+  void setGlFallbackSurface(QOffscreenSurface* surface);
+
+  const QString& GetError();
+
+  bool WasInterrupted();
+signals:
+  void ProgressChanged(int value, qint64 remaining_ms);
+public slots:
+  void Interrupt();
+
+  void play_wake();
+private:
+  bool Encode(AVFormatContext* ofmt_ctx, AVCodecContext* codec_ctx, AVFrame* frame, AVPacket* packet, AVStream* stream);
+  bool SetupVideo();
+  bool SetupAudio();
+  bool SetupContainer();
+  bool Export();
+  void Cleanup();
+
+  std::atomic<bool> interrupt_;
+
+  // params imported from dialogs
+  ExportParams params_;
+  VideoCodecParams vcodec_params_;
+
+  AVFormatContext* fmt_ctx{nullptr};
+  AVStream* video_stream{nullptr};
+  const AVCodec* vcodec{nullptr};
+  AVCodecContext* vcodec_ctx{nullptr};
+  AVFrame* video_frame{nullptr};
+  AVFrame* sws_frame{nullptr};
+  SwsContext* sws_ctx{nullptr};
+  AVStream* audio_stream{nullptr};
+  const AVCodec* acodec{nullptr};
+  AVFrame* audio_frame{nullptr};
+  AVFrame* swr_frame{nullptr};
+  AVCodecContext* acodec_ctx{nullptr};
+  AVPacket* video_pkt{nullptr};
+  AVPacket* audio_pkt{nullptr};
+  SwrContext* swr_ctx{nullptr};
+
+  int aframe_bytes;
+  int ret;
+  char* c_filename{nullptr};
+
+  QMutex mutex;
+  QWaitCondition waitCond;
+  bool render_complete_{false};
+  bool container_opened_{false};  // avio_open succeeded: a file exists at params_.filename
+
+  QString export_error;
+
+  std::atomic<bool> waiting_for_audio_;
+  QOffscreenSurface* gl_fallback_surface_{nullptr};
+private slots:
+  void wake();
+};
+
+#endif // EXPORTTHREAD_H

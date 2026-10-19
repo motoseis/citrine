@@ -1,0 +1,74 @@
+/***
+
+    Olive - Non-Linear Video Editor
+    Copyright (C) 2019  Olive Team
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+***/
+
+#ifndef GRAPHEDITOR_H
+#define GRAPHEDITOR_H
+
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+
+#include "effects/effectrow.h"
+#include "ui/graphview.h"
+#include "ui/keyframenavigator.h"
+#include "ui/labelslider.h"
+#include "ui/panel.h"
+#include "ui/timelineheader.h"
+
+class GraphEditor : public Panel {
+  Q_OBJECT
+ public:
+  GraphEditor(QWidget* parent = nullptr);
+
+  EffectRow* get_row();
+  void set_row(EffectRow* r);
+
+  void update_panel();
+  // Cheap repaint path used during scrubbing: refresh row-relative offsets and
+  // repaint header + graph view, but skip the expensive per-field LabelSlider
+  // value sync that update_panel() performs.
+  void repaint_only();
+  bool view_is_focused();
+  bool view_is_under_mouse();
+  void delete_selected_keys();
+  void select_all();
+
+  void Retranslate() override;
+
+ protected:
+ private:
+  GraphView* view;
+  TimelineHeader* header;
+  QHBoxLayout* value_layout;
+  QVector<LabelSlider*> field_sliders_;
+  QVector<QPushButton*> field_enable_buttons;
+  QLabel* current_row_desc;
+  EffectRow* row{nullptr};
+  KeyframeNavigator* keyframe_nav;
+  QPushButton* linear_button;
+  QPushButton* bezier_button;
+  QPushButton* hold_button;
+ private slots:
+  void set_key_button_enabled(bool e, int type);
+  void set_keyframe_type();
+  void set_field_visibility(bool b);
+};
+
+#endif  // GRAPHEDITOR_H

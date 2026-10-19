@@ -1,0 +1,136 @@
+# AppImage build with Qt 6.10 (native PipeWire audio backend).
+# Ubuntu 24.04 base for glibc 2.39 portability.
+#
+# Usage:
+#   docker build -f packaging/linux/appimage.dockerfile -t amber-appimage \
+#     --build-arg GIT_HASH=$(git rev-parse --short HEAD) .
+#   docker run --rm -v ./out:/out amber-appimage
+
+ARG VERSION=dev
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# System deps: xcb/GL/FFmpeg (Qt comes from aqtinstall below)
+RUN apt-get update && apt-get install -y \
+    cmake build-essential python3-pip \
+    libgl-dev libegl-dev \
+    libfontconfig1-dev libfreetype-dev \
+    libx11-dev libx11-xcb-dev libxcb1-dev \
+    libxcb-glx0-dev libxcb-cursor-dev \
+    libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev \
+    libxcb-randr0-dev libxcb-render-util0-dev libxcb-shape0-dev \
+    libxcb-shm0-dev libxcb-sync-dev libxcb-util-dev \
+    libxcb-xfixes0-dev libxcb-xkb-dev \
+    libxext-dev libxfixes-dev libxi-dev libxrandr-dev \
+    libxkbcommon-dev libxkbcommon-x11-dev libxrender-dev \
+    libavformat-dev libavcodec-dev libavutil-dev \
+    libswscale-dev libswresample-dev libavfilter-dev \
+    libvulkan-dev \
+    libwayland-dev \
+    curl file libfuse2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install tools needed to build rnnoise
+RUN apt-get update && apt-get install -y git autoconf libtool automake wget curl
+
+# Clone, build, and install rnnoise inside the container
+RUN git clone https://github.com/xiph/rnnoise /tmp/rnnoise && \
+    cd /tmp/rnnoise && \
+    ./autogen.sh && \
+    ./configure --prefix=/usr/local && \
+    make && \
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/rnnoise
+
+# Qt 6.10.2 via aqtinstall (native PipeWire audio backend)
+RUN rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED && \
+    pip install aqtinstall && \
+    aqt install-qt linux desktop 6.10.2 linux_gcc_64 \
+      -m qtmultimedia qtshadertools \
+      --outputdir /opt/qt && \
+    pip uninstall -y aqtinstall && \
+    rm -rf /root/.cache/pip
+
+ENV Qt6_DIR=/opt/qt/6.10.2/gcc_64
+ENV CMAKE_PREFIX_PATH=${Qt6_DIR}
+ENV PATH=${Qt6_DIR}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${Qt6_DIR}/lib
+
+# linuxdeploy + Qt plugin (extracted, no FUSE needed)
+RUN curl -L -o /tmp/linuxdeploy.AppImage \
+    https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage && \
+    chmod +x /tmp/linuxdeploy.AppImage && \
+    cd /tmp && /tmp/linuxdeploy.AppImage --appimage-extract && \
+    mv /tmp/squashfs-root /opt/linuxdeploy && \
+    ln -s /opt/linuxdeploy/AppRun /usr/local/bin/linuxdeploy && \
+    curl -L -o /tmp/plugin-qt.AppImage \
+    https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage && \
+    chmod +x /tmp/plugin-qt.AppImage && \
+    cd /tmp && /tmp/plugin-qt.AppImage --appimage-extract && \
+    mv /tmp/squashfs-root /opt/linuxdeploy-plugin-qt && \
+    ln -s /opt/linuxdeploy-plugin-qt/AppRun /usr/local/bin/linuxdeploy-plugin-qt && \
+    rm -f /tmp/*.AppImage
+
+ARG GIT_HASH
+ARG VERSION
+
+COPY src/ /src
+COPY LICENSE /LICENSE
+COPY packaging/ /packaging
+WORKDIR /src/build
+
+RUN cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+      -DCMAKE_PREFIX_PATH=${Qt6_DIR} \
+      ${GIT_HASH:+-DGIT_HASH=${GIT_HASH}} \
+      -DAMBER_VERSION=${VERSION} .. && \
+    make -j$(nproc)
+
+# Remove Qt's FFmpeg media plugin before bundling — we use our own FFmpeg
+# for decoding and only need Qt Multimedia for QAudioSink (PipeWire backend).
+# Leaving it would pull in a second FFmpeg version (ABI conflict).
+#
+# Wayland: linuxdeploy-plugin-qt only deploys the xcb platform plugin by
+# default, and on Qt 6.10 its filename matching misses the Wayland plugins
+# even with EXTRA_PLATFORM_PLUGINS (qgroundcontrol#13855). Qt 6.10 also merged
+# the old libqwayland-generic.so/libqwayland-egl.so into a single
+# libqwayland.so. So we copy the Wayland platform, decoration (bradient +
+# adwaita) and shell/graphics integration plugins into the AppDir by hand
+# BEFORE linuxdeploy — its final dependency pass then bundles their
+# libQt6WaylandClient / libwayland-* dependencies. The decoration plugins give
+# native-Wayland sessions a window frame even on compositors (GNOME) that
+# refuse server-side decorations.
+# NOTE: the GNOME→xcb workaround in main.cpp still forces XWayland on GNOME;
+# this enables native Wayland (+ Vulkan) on KDE/wlroots compositors that
+# provide server-side decorations.
+RUN DESTDIR=/tmp/AppDir make install && \
+    rm -f ${Qt6_DIR}/plugins/multimedia/libffmpegmediaplugin.so && \
+    mkdir -p /tmp/AppDir/usr/plugins/platforms \
+             /tmp/AppDir/usr/plugins/wayland-decoration-client \
+             /tmp/AppDir/usr/plugins/wayland-shell-integration \
+             /tmp/AppDir/usr/plugins/wayland-graphics-integration-client && \
+    cp -a ${Qt6_DIR}/plugins/platforms/libqwayland.so \
+          /tmp/AppDir/usr/plugins/platforms/ && \
+    cp -a ${Qt6_DIR}/plugins/wayland-decoration-client/. \
+          /tmp/AppDir/usr/plugins/wayland-decoration-client/ && \
+    cp -a ${Qt6_DIR}/plugins/wayland-shell-integration/. \
+          /tmp/AppDir/usr/plugins/wayland-shell-integration/ && \
+    cp -a ${Qt6_DIR}/plugins/wayland-graphics-integration-client/. \
+          /tmp/AppDir/usr/plugins/wayland-graphics-integration-client/ && \
+    VERSION="${VERSION}" \
+    QMAKE=${Qt6_DIR}/bin/qmake \
+    EXTRA_PLATFORM_PLUGINS="libqwayland.so" \
+    linuxdeploy \
+      --appdir /tmp/AppDir \
+      --plugin qt \
+      --output appimage \
+      --exclude-library "libva*" \
+      --desktop-file /tmp/AppDir/usr/share/applications/org.ambervideoeditor.Amber.desktop \
+      --icon-file /tmp/AppDir/usr/share/icons/hicolor/256x256/apps/org.ambervideoeditor.Amber.png
+
+RUN mkdir -p /out && mv /src/build/Amber*.AppImage /out/ 2>/dev/null || mv /src/build/*.AppImage /out/ 2>/dev/null || true
+
+FROM scratch
+COPY --from=0 /out/ /
