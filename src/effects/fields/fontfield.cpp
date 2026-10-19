@@ -29,6 +29,8 @@ QWidget *FontField::CreateWidget(QWidget *existing)
     fcb = new ComboBoxEx();
 
     fcb->setScrollingEnabled(false);
+    fcb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    fcb->setMinimumContentsLength(12);
 
     fcb->addItems(font_list);
 
