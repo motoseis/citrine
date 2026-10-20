@@ -23,6 +23,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/hwcontext.h>
 }
 
 #include <QCoreApplication>
@@ -137,6 +138,35 @@ void ExportDialog::add_codec_to_combobox(QComboBox* box, enum AVCodecID codec) {
   }
 
   box->addItem(codec_name, codec);
+}
+
+// Adds the GPU (NVENC and VAAPI) H.264/H.265 encoders after the CPU ones so saved codec indexes keep their meaning.
+// An encoder is only listed when FFmpeg has it and its GPU device can be opened on this machine.
+// The encoder name is stored in Qt::UserRole + 1; the codec ID stays in the item data as for CPU encoders.
+static void add_gpu_codecs(QComboBox* box) {
+  const struct {
+    AVCodecID codec;
+    const char* encoder;
+    AVHWDeviceType device;
+  } gpu_codecs[] = {
+      {AV_CODEC_ID_H264, "h264_nvenc", AV_HWDEVICE_TYPE_CUDA},
+      {AV_CODEC_ID_H265, "hevc_nvenc", AV_HWDEVICE_TYPE_CUDA},
+      {AV_CODEC_ID_H264, "h264_vaapi", AV_HWDEVICE_TYPE_VAAPI},
+      {AV_CODEC_ID_H265, "hevc_vaapi", AV_HWDEVICE_TYPE_VAAPI},
+  };
+
+  for (const auto& gpu : gpu_codecs) {
+    const AVCodec* codec_info = avcodec_find_encoder_by_name(gpu.encoder);
+    if (codec_info == nullptr || box->findData(gpu.codec) < 0) continue;
+
+    // Probe the GPU device; without a working driver the encoder can't be used
+    AVBufferRef* device = nullptr;
+    if (av_hwdevice_ctx_create(&device, gpu.device, nullptr, nullptr, 0) < 0) continue;
+    av_buffer_unref(&device);
+
+    box->addItem(codec_info->long_name, gpu.codec);
+    box->setItemData(box->count() - 1, gpu.encoder, Qt::UserRole + 1);
+  }
 }
 
 void ExportDialog::format_changed(int index) {
@@ -326,6 +356,7 @@ void ExportDialog::format_changed(int index) {
       qCritical() << "Invalid format selection - this is a bug, please inform the developers";
   }
 
+  add_gpu_codecs(vcodecCombobox);
   vcodecCombobox->setCurrentIndex(default_vcodec);
   acodecCombobox->setCurrentIndex(default_acodec);
 
@@ -499,6 +530,7 @@ void ExportDialog::StartExport() {
     params.video_enabled = videoGroupbox->isChecked();
     if (params.video_enabled) {
       params.video_codec = vcodecCombobox->currentData().toInt();
+      params.video_encoder = vcodecCombobox->currentData(Qt::UserRole + 1).toString();
       params.video_width = widthSpinbox->value();
       params.video_height = heightSpinbox->value();
       params.video_frame_rate = framerateSpinbox->value();
@@ -660,7 +692,8 @@ void ExportDialog::comp_type_changed(int) {
       break;
     case COMPRESSION_TYPE_CFR:
       videoBitrateLabel->setText(tr("Quality (CRF):"));
-      videobitrateSpinbox->setValue(36);
+      // Defaults follow each encoder's own: libx264/h264_nvenc 23, libx265/hevc_nvenc 28
+      videobitrateSpinbox->setValue(vcodecCombobox->currentData().toInt() == AV_CODEC_ID_H265 ? 28 : 23);
       videobitrateSpinbox->setMaximum(51);
       videobitrateSpinbox->setToolTip(
           tr("Quality Factor:\n\n0 = lossless\n17-18 = visually lossless (compressed, but unnoticeable)\n23 = high "

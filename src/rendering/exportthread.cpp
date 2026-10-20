@@ -22,6 +22,7 @@
 
 extern "C" {
 #include <libavformat/avformat.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/opt.h>
 #include <libavutil/channel_layout.h>
 #include <libswresample/swresample.h>
@@ -99,7 +100,11 @@ bool ExportThread::SetupVideo() {
   if (!params_.video_enabled) return true;
 
   // find video encoder
-  vcodec = avcodec_find_encoder(static_cast<enum AVCodecID>(params_.video_codec));
+  if (params_.video_encoder.isEmpty()) {
+    vcodec = avcodec_find_encoder(static_cast<enum AVCodecID>(params_.video_codec));
+  } else {
+    vcodec = avcodec_find_encoder_by_name(params_.video_encoder.toUtf8().constData());
+  }
   if (!vcodec) {
     qCritical() << "Could not find video encoder";
     export_error = tr("could not video encoder for %1").arg(QString::number(params_.video_codec));
@@ -130,7 +135,10 @@ bool ExportThread::SetupVideo() {
   vcodec_ctx->width = params_.video_width;
   vcodec_ctx->height = params_.video_height;
   vcodec_ctx->sample_aspect_ratio = {1, 1};
-  vcodec_ctx->pix_fmt = static_cast<AVPixelFormat>(vcodec_params_.pix_fmt);
+  // VAAPI encoders take GPU surfaces in NV12; frames are uploaded from a software NV12 frame
+  bool vaapi = params_.video_encoder.endsWith("_vaapi");
+  sw_pix_fmt = vaapi ? AV_PIX_FMT_NV12 : static_cast<AVPixelFormat>(vcodec_params_.pix_fmt);
+  vcodec_ctx->pix_fmt = vaapi ? AV_PIX_FMT_VAAPI : sw_pix_fmt;
   vcodec_ctx->framerate = av_d2q(params_.video_frame_rate, INT_MAX);
   if (params_.video_compression_type == COMPRESSION_TYPE_CBR) {
     vcodec_ctx->bit_rate = qRound(params_.video_bitrate * 1000000);
@@ -160,7 +168,17 @@ bool ExportThread::SetupVideo() {
   case AV_CODEC_ID_H265:
     switch (params_.video_compression_type) {
     case COMPRESSION_TYPE_CFR:
-      av_opt_set(vcodec_ctx->priv_data, "crf", QString::number(static_cast<int>(params_.video_bitrate)).toUtf8(), AV_OPT_SEARCH_CHILDREN);
+      if (params_.video_encoder.endsWith("_nvenc")) {
+        // NVENC has no CRF; constant quality is VBR with a cq target on the same 0-51 scale
+        av_opt_set(vcodec_ctx->priv_data, "rc", "vbr", AV_OPT_SEARCH_CHILDREN);
+        av_opt_set(vcodec_ctx->priv_data, "cq", QString::number(static_cast<int>(params_.video_bitrate)).toUtf8(), AV_OPT_SEARCH_CHILDREN);
+      } else if (vaapi) {
+        // VAAPI has no CRF either; constant QP is the closest match on a 0-52 scale
+        av_opt_set(vcodec_ctx->priv_data, "rc_mode", "CQP", AV_OPT_SEARCH_CHILDREN);
+        av_opt_set(vcodec_ctx->priv_data, "qp", QString::number(static_cast<int>(params_.video_bitrate)).toUtf8(), AV_OPT_SEARCH_CHILDREN);
+      } else {
+        av_opt_set(vcodec_ctx->priv_data, "crf", QString::number(static_cast<int>(params_.video_bitrate)).toUtf8(), AV_OPT_SEARCH_CHILDREN);
+      }
       break;
     }
     break;
@@ -175,6 +193,37 @@ bool ExportThread::SetupVideo() {
     av_dict_set(&opts, "threads", "auto", 0);
   } else {
     av_dict_set(&opts, "threads", QString::number(vcodec_params_.threads).toUtf8(), 0);
+  }
+
+  // VAAPI encoders need a device and a surface pool to draw frames from
+  if (vaapi) {
+    if (av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0) < 0) {
+      qCritical() << "Could not create VAAPI device for export";
+      export_error = tr("could not create VAAPI device for export");
+      av_dict_free(&opts);
+      return false;
+    }
+    hw_frames_ctx = av_hwframe_ctx_alloc(hw_device_ctx);
+    if (hw_frames_ctx == nullptr) {
+      export_error = tr("could not allocate VAAPI frame context");
+      av_dict_free(&opts);
+      return false;
+    }
+    AVHWFramesContext* frames = reinterpret_cast<AVHWFramesContext*>(hw_frames_ctx->data);
+    frames->format = AV_PIX_FMT_VAAPI;
+    frames->sw_format = sw_pix_fmt;
+    frames->width = params_.video_width;
+    frames->height = params_.video_height;
+    frames->initial_pool_size = 20;
+    ret = av_hwframe_ctx_init(hw_frames_ctx);
+    if (ret < 0) {
+      qCritical() << "Could not initialise VAAPI frame context." << ret;
+      export_error = tr("could not initialise VAAPI frame context (%1)").arg(QString::number(ret));
+      av_dict_free(&opts);
+      return false;
+    }
+    vcodec_ctx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+    vcodec_ctx->hw_frames_ctx = av_buffer_ref(hw_frames_ctx);
   }
 
   // Open video encoder
@@ -219,7 +268,7 @@ bool ExportThread::SetupVideo() {
         AV_PIX_FMT_RGBA,
         params_.video_width,
         params_.video_height,
-        vcodec_ctx->pix_fmt,
+        sw_pix_fmt,
         SWS_BILINEAR,
         nullptr,
         nullptr,
@@ -514,7 +563,7 @@ bool ExportThread::Export()
 
       // Construct destination pixel format frame
       sws_frame = av_frame_alloc();
-      sws_frame->format = vcodec_ctx->pix_fmt;
+      sws_frame->format = sw_pix_fmt;
       sws_frame->width = params_.video_width;
       sws_frame->height = params_.video_height;
       av_frame_get_buffer(sws_frame, 0);
@@ -523,16 +572,32 @@ bool ExportThread::Export()
       sws_scale(sws_ctx, video_frame->data, video_frame->linesize, 0, video_frame->height, sws_frame->data, sws_frame->linesize);
       sws_frame->pts = qRound(timecode_secs/av_q2d(vcodec_ctx->time_base));
 
+      // VAAPI encoders need the frame copied into a GPU surface first
+      AVFrame* encode_frame = sws_frame;
+      if (hw_frames_ctx != nullptr) {
+        encode_frame = av_frame_alloc();
+        if (av_hwframe_get_buffer(hw_frames_ctx, encode_frame, 0) < 0 ||
+            av_hwframe_transfer_data(encode_frame, sws_frame, 0) < 0) {
+          qCritical() << "Could not upload frame to VAAPI surface";
+          export_error = tr("could not upload frame to VAAPI surface");
+          av_frame_free(&encode_frame);
+          av_frame_free(&sws_frame);
+          sws_frame = nullptr;
+          frames_ok = false;
+          goto cleanup_renderer;
+        }
+        encode_frame->pts = sws_frame->pts;
+      }
+
       // Send frame to encoder
-      if (!Encode(fmt_ctx, vcodec_ctx, sws_frame, video_pkt, video_stream)) {
-        av_frame_free(&sws_frame);
-        sws_frame = nullptr;
+      bool encoded = Encode(fmt_ctx, vcodec_ctx, encode_frame, video_pkt, video_stream);
+      if (encode_frame != sws_frame) av_frame_free(&encode_frame);
+      av_frame_free(&sws_frame);
+      sws_frame = nullptr;
+      if (!encoded) {
         frames_ok = false;
         goto cleanup_renderer;
       }
-
-      av_frame_free(&sws_frame);
-      sws_frame = nullptr;
     }
 
     // If we're exporting audio, copy audio from the buffer into an AVFrame for encoding
@@ -705,6 +770,9 @@ void ExportThread::Cleanup()
   if (sws_frame != nullptr) {
     av_frame_free(&sws_frame);
   }
+
+  av_buffer_unref(&hw_frames_ctx);
+  av_buffer_unref(&hw_device_ctx);
 
   delete [] c_filename;
 }

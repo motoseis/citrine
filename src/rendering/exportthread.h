@@ -52,6 +52,8 @@ struct ExportParams {
   QString filename;
   bool video_enabled;
   int video_codec;
+  // Encoder name when a specific one is chosen (e.g. "h264_nvenc"); empty uses the codec's default encoder
+  QString video_encoder;
   int video_width;
   int video_height;
   double video_frame_rate;
@@ -110,6 +112,10 @@ private:
   AVFrame* video_frame{nullptr};
   AVFrame* sws_frame{nullptr};
   SwsContext* sws_ctx{nullptr};
+  // Software format frames are converted to before encoding; VAAPI encoders take it from GPU surfaces instead
+  AVPixelFormat sw_pix_fmt{AV_PIX_FMT_NONE};
+  AVBufferRef* hw_device_ctx{nullptr};
+  AVBufferRef* hw_frames_ctx{nullptr};
   AVStream* audio_stream{nullptr};
   const AVCodec* acodec{nullptr};
   AVFrame* audio_frame{nullptr};
