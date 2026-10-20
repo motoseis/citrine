@@ -343,6 +343,8 @@ void LoadThread::parse_footage(QXmlStreamReader& stream, const QStringView& chil
       f->proxy = (attr.value() == QLatin1String("1"));
     } else if (attr.name() == QLatin1String("proxypath")) {
       f->proxy_path = attr.value().toString();
+    } else if (attr.name() == QLatin1String("proxymethod")) {
+      f->proxy_method = attr.value().toString();
     } else if (attr.name() == QLatin1String("startnumber")) {
       f->start_number = attr.value().toInt();
     } else if (attr.name() == QLatin1String("label")) {

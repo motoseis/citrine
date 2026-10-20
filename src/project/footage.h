@@ -87,6 +87,8 @@ struct Footage {
   // proxy config
   bool proxy;
   QString proxy_path;
+  // decoder used to create the proxy (e.g. "VAAPI"), shown in media properties
+  QString proxy_method;
 
   // thumbnail/waveform generation
   std::atomic<PreviewGenerator*> preview_gen;

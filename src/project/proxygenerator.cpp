@@ -40,6 +40,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/opt.h>
 #include <libswscale/swscale.h>
 }
@@ -48,7 +49,17 @@ constexpr double kProxySizeMultipliers[] = {1.0, 0.5, 0.25, 0.125, 0.0625};
 
 ProxyGenerator::ProxyGenerator() = default;
 
-static AVCodecContext* open_decoder(const AVCodecParameters* par, const AVCodec* codec, bool nvdec) {
+// Chooses the VAAPI surface format when the decoder offers it. Otherwise returns the first software format so
+// decoding still proceeds in software.
+static enum AVPixelFormat pick_vaapi_format(AVCodecContext*, const enum AVPixelFormat* formats) {
+  for (const enum AVPixelFormat* f = formats; *f != AV_PIX_FMT_NONE; f++) {
+    if (*f == AV_PIX_FMT_VAAPI) return *f;
+  }
+  return formats[0];
+}
+
+static AVCodecContext* open_decoder(const AVCodecParameters* par, const AVCodec* codec, bool nvdec,
+                                    AVBufferRef* hw_device = nullptr) {
   if (codec == nullptr) return nullptr;
 
   AVCodecContext* ctx = avcodec_alloc_context3(codec);
@@ -58,6 +69,10 @@ static AVCodecContext* open_decoder(const AVCodecParameters* par, const AVCodec*
   if (nvdec) {
     av_opt_set_int(ctx->priv_data, "gpu_output_format", AV_PIX_FMT_NV12, 0);
     ctx->color_range = AVCOL_RANGE_MPEG;
+  }
+  if (hw_device != nullptr) {
+    ctx->hw_device_ctx = av_buffer_ref(hw_device);
+    ctx->get_format = pick_vaapi_format;
   }
 
   if (avcodec_open2(ctx, codec, nullptr) < 0) {
@@ -134,6 +149,17 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
   QVector<AVCodecContext*> output_streams(nb_streams, nullptr);
   QVector<SwsContext*> sws_contexts(nb_streams, nullptr);
 
+  // Pixel format each scaler was built for. Decoded frames can arrive in a different format than codecpar reports
+  // (VAAPI and NVDEC output), so the scaler is rebuilt whenever this changes.
+  QVector<int> sws_src_formats(nb_streams, AV_PIX_FMT_NONE);
+
+  // Shared VAAPI device for all video streams in this file, created on first use
+  AVBufferRef* vaapi_device = nullptr;
+  bool vaapi_failed = false;
+
+  // Decoder that produced the video frames, recorded on the footage for display
+  QString decode_method = "Software";
+
   // Maps an INPUT stream index to its OUTPUT stream index, or -1 if this input stream is dropped entirely (not written
   // to the proxy at all).
   QVector<int> out_index(nb_streams, -1);
@@ -161,12 +187,26 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
     }
 
     AVCodecContext* dec_ctx = nullptr;
-    bool using_nvdec = false;
     if (in_stream->codecpar->codec_id == AV_CODEC_ID_HEVC) {
       dec_ctx = open_decoder(in_stream->codecpar, avcodec_find_decoder_by_name("hevc_cuvid"), true);
-      using_nvdec = (dec_ctx != nullptr);
-      if (!using_nvdec) {
-        qWarning() << "Proxy: hevc_cuvid unavailable, falling back to software decoder";
+      if (dec_ctx == nullptr) {
+        qWarning() << "Proxy: hevc_cuvid unavailable, trying VAAPI";
+      } else {
+        decode_method = "NVDEC";
+      }
+    }
+    if (dec_ctx == nullptr && amber::CurrentConfig.hardware_decoding && !vaapi_failed) {
+      if (vaapi_device == nullptr &&
+          av_hwdevice_ctx_create(&vaapi_device, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0) < 0) {
+        qWarning() << "Proxy: could not create VAAPI device, falling back to software decoder";
+        vaapi_failed = true;
+      }
+      if (vaapi_device != nullptr) {
+        dec_ctx =
+            open_decoder(in_stream->codecpar, avcodec_find_decoder(in_stream->codecpar->codec_id), false, vaapi_device);
+        if (dec_ctx == nullptr) {
+          qWarning() << "Proxy: VAAPI cannot decode stream" << i << ", falling back to software decoder";
+        }
       }
     }
     if (dec_ctx == nullptr) {
@@ -234,15 +274,6 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
 
     input_streams[i] = dec_ctx;
     output_streams[i] = enc_ctx;
-
-    enum AVPixelFormat src_pix_fmt = using_nvdec ? AV_PIX_FMT_NV12
-                                                 : static_cast<enum AVPixelFormat>(in_stream->codecpar->format);
-    if (src_pix_fmt != enc_ctx->pix_fmt || in_stream->codecpar->width != enc_ctx->width
-        || in_stream->codecpar->height != enc_ctx->height) {
-      sws_contexts[i] = sws_getContext(in_stream->codecpar->width, in_stream->codecpar->height, src_pix_fmt,
-                                       enc_ctx->width, enc_ctx->height, enc_ctx->pix_fmt, SWS_BILINEAR, nullptr,
-                                       nullptr, nullptr);
-    }
   }
 
   if (avformat_write_header(output_fmt_ctx, nullptr) < 0) {
@@ -252,33 +283,74 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
 
   AVPacket* packet = av_packet_alloc();
   AVFrame* dec_frame = av_frame_alloc();
+  AVFrame* sw_frame = av_frame_alloc();
   AVFrame* enc_frame = av_frame_alloc();
 
   int64_t total_duration = input_fmt_ctx->duration > 0 ? input_fmt_ctx->duration : 1;
 
   auto encode_decoded_frames = [&](int stream_index) {
     while (avcodec_receive_frame(input_streams.at(stream_index), dec_frame) >= 0) {
-      current_progress = qBound(0.0, double(dec_frame->pts) / double(total_duration) * 100.0, 100.0);
+      // Frame timestamps are in the stream's time base but the total duration is in AV_TIME_BASE (microseconds), so
+      // convert the timestamp before comparing them
+      int64_t pts = dec_frame->best_effort_timestamp;
+      if (pts != AV_NOPTS_VALUE) {
+        int64_t pts_us = av_rescale_q(pts, input_fmt_ctx->streams[stream_index]->time_base, AV_TIME_BASE_Q);
+        current_progress = qBound(0.0, double(pts_us) / double(total_duration) * 100.0, 100.0);
+      }
 
-      AVFrame* frame_to_encode = dec_frame;
+      AVFrame* src_frame = dec_frame;
+      if (dec_frame->format == AV_PIX_FMT_VAAPI) {
+        // VAAPI frames live in GPU memory, so copy them to system memory before scaling
+        decode_method = "VAAPI";
+        if (av_hwframe_transfer_data(sw_frame, dec_frame, 0) < 0) {
+          qCritical() << "Proxy: could not transfer VAAPI frame to system memory";
+          av_frame_unref(dec_frame);
+          skip = true;
+          break;
+        }
+        av_frame_copy_props(sw_frame, dec_frame);
+        src_frame = sw_frame;
+      }
 
-      bool convert = (sws_contexts.at(stream_index) != nullptr);
+      AVCodecContext* enc = output_streams.at(stream_index);
+      AVFrame* frame_to_encode = src_frame;
+
+      bool convert =
+          (src_frame->format != enc->pix_fmt || src_frame->width != enc->width || src_frame->height != enc->height);
       if (convert) {
-        enc_frame->width = output_streams.at(stream_index)->width;
-        enc_frame->height = output_streams.at(stream_index)->height;
-        enc_frame->format = output_streams.at(stream_index)->pix_fmt;
+        if (sws_contexts.at(stream_index) == nullptr || sws_src_formats.at(stream_index) != src_frame->format) {
+          sws_freeContext(sws_contexts[stream_index]);
+          sws_contexts[stream_index] =
+              sws_getContext(src_frame->width, src_frame->height, static_cast<AVPixelFormat>(src_frame->format),
+                             enc->width, enc->height, enc->pix_fmt, SWS_BILINEAR, nullptr, nullptr, nullptr);
+          sws_src_formats[stream_index] = src_frame->format;
+          if (sws_contexts.at(stream_index) == nullptr) {
+            qCritical() << "Proxy: could not create scaler for decoded frame format" << src_frame->format;
+            av_frame_unref(sw_frame);
+            av_frame_unref(dec_frame);
+            skip = true;
+            break;
+          }
+        }
+
+        enc_frame->width = enc->width;
+        enc_frame->height = enc->height;
+        enc_frame->format = enc->pix_fmt;
         av_frame_get_buffer(enc_frame, 32);
 
-        sws_scale(sws_contexts.at(stream_index), dec_frame->data, dec_frame->linesize, 0, dec_frame->height,
+        sws_scale(sws_contexts.at(stream_index), src_frame->data, src_frame->linesize, 0, src_frame->height,
                   enc_frame->data, enc_frame->linesize);
-        enc_frame->pts = dec_frame->pts;
+        enc_frame->pts = src_frame->pts;
         frame_to_encode = enc_frame;
       }
 
-      avcodec_send_frame(output_streams.at(stream_index), frame_to_encode);
+      avcodec_send_frame(enc, frame_to_encode);
 
       if (convert) {
         av_frame_unref(enc_frame);
+      }
+      if (src_frame == sw_frame) {
+        av_frame_unref(sw_frame);
       }
       av_frame_unref(dec_frame);
 
@@ -349,11 +421,13 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
 
     footage->proxy = true;
     footage->proxy_path = info.path;
+    footage->proxy_method = decode_method;
     success = true;
   }
 
   av_packet_free(&packet);
   av_frame_free(&dec_frame);
+  av_frame_free(&sw_frame);
   av_frame_free(&enc_frame);
 
   for (int i = 0; i < nb_streams; i++) {
@@ -361,6 +435,8 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
     if (output_streams.at(i)) avcodec_free_context(&output_streams[i]);
     if (sws_contexts.at(i)) sws_freeContext(sws_contexts.at(i));
   }
+  // decoder contexts hold their own references to the device, so it can be released once they are freed
+  av_buffer_unref(&vaapi_device);
 
   avio_closep(&output_fmt_ctx->pb);
   avformat_free_context(output_fmt_ctx);
@@ -427,6 +503,7 @@ void ProxyGenerator::queue_media(Media* media, bool force) {
 
   footage->proxy = true;
   footage->proxy_path.clear();
+  footage->proxy_method.clear();
 
   queue(info);
 }

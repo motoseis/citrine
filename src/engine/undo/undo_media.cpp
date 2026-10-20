@@ -35,6 +35,7 @@ static void remove_proxy_files(Media* m) {
     if (!f->proxy_path.isEmpty()) QFile::remove(f->proxy_path);
     f->proxy = false;
     f->proxy_path.clear();
+    f->proxy_method.clear();
   }
 
   for (int i = 0; i < m->childCount(); i++) {

@@ -1174,6 +1174,7 @@ void Project::save_folder(QXmlStreamWriter& stream, int type, bool set_ids_only,
 
           stream.writeAttribute("proxy", QString::number(f->proxy));
           stream.writeAttribute("proxypath", f->proxy_path);
+          stream.writeAttribute("proxymethod", f->proxy_method);
           if (m->color_label() > 0) {
             stream.writeAttribute("label", QString::number(m->color_label()));
           }

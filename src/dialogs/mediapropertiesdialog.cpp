@@ -30,6 +30,8 @@
 #include <QListWidget>
 #include <QCheckBox>
 #include <QSpinBox>
+#include <QFileInfo>
+#include <QLocale>
 
 #include "project/footage.h"
 #include "project/media.h"
@@ -130,6 +132,28 @@ MediaPropertiesDialog::MediaPropertiesDialog(QWidget *parent, Media *i) :
   name_box = new QLineEdit(item->get_name(), this);
   grid->addWidget(new QLabel(tr("Name:"), this), row, 0);
   grid->addWidget(name_box, row, 1);
+  row++;
+
+  // proxy status (read-only)
+  QString proxy_text;
+  QString proxy_tooltip;
+  if (!f->proxy_path.isEmpty() && QFileInfo::exists(f->proxy_path)) {
+    QFileInfo proxy_info(f->proxy_path);
+    QString size_text = QLocale().formattedDataSize(proxy_info.size());
+    proxy_text = f->proxy_method.isEmpty() ? size_text : tr("%1, %2").arg(f->proxy_method, size_text);
+    proxy_tooltip = f->proxy_path;
+  } else if (!f->proxy_path.isEmpty()) {
+    proxy_text = tr("Proxy file missing");
+    proxy_tooltip = f->proxy_path;
+  } else if (f->proxy) {
+    proxy_text = tr("Generating...");
+  } else {
+    proxy_text = tr("None");
+  }
+  QLabel* proxy_label = new QLabel(proxy_text, this);
+  proxy_label->setToolTip(proxy_tooltip);
+  grid->addWidget(new QLabel(tr("Proxy:"), this), row, 0);
+  grid->addWidget(proxy_label, row, 1);
   row++;
 
   QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
