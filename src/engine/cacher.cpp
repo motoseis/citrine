@@ -162,7 +162,9 @@ bool Cacher::openWorkerOpenCodec(Footage* m, const FootageStream* ms) {
   if (amber::CurrentConfig.hardware_decoding && stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
     static const AVHWDeviceType hw_types[] = {
 #if defined(__linux__)
+      // CUDA comes after VAAPI so Nvidia GPUs without a VAAPI driver still get hardware decoding
       AV_HWDEVICE_TYPE_VAAPI,
+      AV_HWDEVICE_TYPE_CUDA,
 #elif defined(_WIN32)
       AV_HWDEVICE_TYPE_D3D11VA,
 #elif defined(__APPLE__)
