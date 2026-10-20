@@ -187,10 +187,16 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
     }
 
     AVCodecContext* dec_ctx = nullptr;
+    const char* cuvid_name = nullptr;
     if (in_stream->codecpar->codec_id == AV_CODEC_ID_HEVC) {
-      dec_ctx = open_decoder(in_stream->codecpar, avcodec_find_decoder_by_name("hevc_cuvid"), true);
+      cuvid_name = "hevc_cuvid";
+    } else if (in_stream->codecpar->codec_id == AV_CODEC_ID_H264) {
+      cuvid_name = "h264_cuvid";
+    }
+    if (cuvid_name != nullptr) {
+      dec_ctx = open_decoder(in_stream->codecpar, avcodec_find_decoder_by_name(cuvid_name), true);
       if (dec_ctx == nullptr) {
-        qWarning() << "Proxy: hevc_cuvid unavailable, trying VAAPI";
+        qWarning() << "Proxy:" << cuvid_name << "unavailable, trying VAAPI";
       } else {
         decode_method = "NVDEC";
       }
