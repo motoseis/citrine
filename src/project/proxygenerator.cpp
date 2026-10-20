@@ -29,6 +29,7 @@
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -94,6 +95,11 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
   Footage* footage = info.media->to_footage();
 
   current_progress = 0.0;
+
+  QElapsedTimer timer;
+  timer.start();
+  qInfo() << "Proxy: start" << footage->url << "size"
+          << QString::number(QFileInfo(footage->url).size() / 1048576.0, 'f', 1) << "MB";
 
   AVDictionary* format_opts = nullptr;
   if (footage->start_number > 0) {
@@ -449,6 +455,10 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
   avformat_close_input(&input_fmt_ctx);
 
   if (!success) QFile::remove(info.path);
+
+  qInfo() << "Proxy: end" << footage->url << (success ? "ok" : "failed") << "took"
+          << QString::number(timer.elapsed() / 1000.0, 'f', 1) << "s, proxy size"
+          << QString::number(QFileInfo(info.path).size() / 1048576.0, 'f', 1) << "MB";
 
   current_progress = 100.0;
 }
