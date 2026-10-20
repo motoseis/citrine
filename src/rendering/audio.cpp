@@ -292,7 +292,9 @@ int AudioSenderThread::send_audio_to_output(qint64 offset, int max) {
     actual_write = (total_bytes > 0) ? audio_io_device->write(staging_buffer_.constData(), total_bytes) : 0;
     consumed = pairs_to_write * 4;  // only advance ibuffer read by grain data
   } else {
-    // Normal playback: write raw ibuffer directly to device
+    // Normal playback: write raw ibuffer directly to device. When shuttling with audio scrubbing off, the
+    // data is zeroed first so silence is written and the VU meter reads zero
+    if (audio_shuttle_muted.load()) memset(audio_ibuffer + offset, 0, max);
     actual_write = audio_io_device->write(reinterpret_cast<const char*>(audio_ibuffer) + offset, max);
     consumed = (actual_write > 0) ? actual_write : 0;
   }

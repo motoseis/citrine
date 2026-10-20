@@ -156,6 +156,7 @@ class Viewer : public Panel {
   void set_zoom_value(double d);
   void set_sb_max();
   void set_playback_speed(int s);
+  void update_shuttle_mute();
 
   long get_seq_in();
   long get_seq_out();

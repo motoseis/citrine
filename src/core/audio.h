@@ -12,6 +12,8 @@ extern std::atomic<qint64> audio_ibuffer_read;
 extern std::atomic<long> audio_ibuffer_frame;
 extern std::atomic<unsigned> audio_scrub_id;
 extern std::atomic<bool> audio_scrub_data_ready;
+// Set by the viewer while shuttling (J/L past 1x) with Audio Scrubbing off, so the sender writes silence
+extern std::atomic<bool> audio_shuttle_muted;
 
 int scrub_grain_samples(int sample_rate);
 int scrub_grain_bytes(int sample_rate);

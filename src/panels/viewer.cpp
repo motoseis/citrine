@@ -451,6 +451,7 @@ void Viewer::play(bool in_to_out) {
     playback_speed = 1;
   }
 
+  update_shuttle_mute();
   reset_all_audio();
 
   // Voice-over pre-roll: instead of recording immediately, show a 3-second
@@ -539,6 +540,7 @@ void Viewer::pause(bool clear_buffer) {
   set_playpause_icon(true);
   playback_updater.stop();
   playback_speed = 0;
+  audio_shuttle_muted.store(false);
 
   // Flush audio buffer on pause to prevent stale samples from playing
   if (clear_buffer) {
@@ -734,13 +736,19 @@ void Viewer::set_sb_max() {
 }
 
 void Viewer::set_playback_speed(int s) {
-  int clamped = qMin(3, qMax(s, -3));
+  int clamped = qMin(5, qMax(s, -5));
   if (clamped == playback_speed) return;  // no change, avoid needless audio reset
   pause();
   playback_speed = clamped;
   if (playback_speed != 0) {
     play();
   }
+}
+
+// Shuttling (J/L past 1x, or reverse) follows the Audio Scrubbing option: with it off, the audio is silent
+void Viewer::update_shuttle_mute() {
+  bool shuttling = playback_speed != 0 && playback_speed != 1;
+  audio_shuttle_muted.store(shuttling && !amber::CurrentConfig.enable_audio_scrubbing);
 }
 
 long Viewer::get_seq_in() {
