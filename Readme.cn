@@ -1,0 +1,92 @@
+README:
+
+v1.00
+	1. Added audio noise removal using the RNNoise method.
+	2. Added audio band pass filtering.
+	3. Fixed bug so that audio graph is displayed even on more narrow tracks
+	4. Fixed bug so that viewport goes to the end when the cursor is moved to the end by 
+	   use of "End" button.  The same when moving from the End to the beginning.
+
+v1.01:
+	1.Added an animated line drawing effect "drawlineeffect" to draw a line as a 
+	  function of time through keyframe coordinate specification.
+
+v1.02
+	1.Attempted to use mouse to change points of line but couldn't get this 
+	  working, so gave up for the time being.
+	
+v1.03:
+	1.Changed name of line drawing effect to "drawlineeffect".
+
+v1.04:
+	1.Adding text effect to reveal text varying as a function of keyframe
+	2.Adding text effect animation, where the text appears at the beginning of 
+	  the clip and disappears at the end of the clip, works for the outline option
+	  but not the shadow option.
+	3.Changed some of the defaults for the texteffects
+	4.Changed behaviour of track size manipulation to enable smaller track size,
+	  useful on smaller screens.
+	5.Added effect for privacy, for example if you want to obscure a document or face.
+	6.Added a sharpening effect
+	  
+v1.05: 	
+	1.Added effect ability to use colour look up tables (LUTS)      
+	2.Added effect to draw a circle used to highlight an area of the clip
+		
+v1.06:	
+	1.Trying another privacy method produced by gemini.  Since the Claude 
+	  method gave problems.
+	2.I'm keeping the gemini privacy method one since it works on both the desktop and 
+	  laptop.  I removed the censor effect since it didn't work well on 
+	  the laptop.                                             
+		  
+v1.07:	
+	1.Making changes as the maintainer requested.
+
+v1.08: 261006 
+	1. Copy from v1.07 with all the latest changes.
+	2. Modified the rnnoise effect to remove the echo
+	
+v1.09: 261013
+	1. Copy from v1.08
+	2. Copied new and updated effects from v1.07. Shaders: Sharpen, lut, privacy_mask,
+	   highlightcircle.  CPU effects: texteffect,audiornnoise, audiobpfilter.
+	   (drawline was not a part of the routines supplied to the maintainer, but it's in
+	   v1.09).
+	   
+citrine Forked from amber v1.09
+===============================
+v1.09: 261013
+	1. Renamed and changed to citrine logo
+	2. Added option in the drawline effect to make the line speed constant over the clip
+	3. Fixed a bug when doing a cut in a selected clip. The highlight color got confused when
+	   cutting a selected clip which is now fixed.
+	4. When cutting in a selected clip with Ctrl-K Ctrl-k or Ctrl-Z would no longer work.  This 
+	   is now fixed. (However, might have introduced another bug, needs more investigation)
+	5. Added facility to go to next or previous marker by using Alt-Up and Alt-Down. 
+	   (I could not find a way to navigate between markers so added this.)
+
+v1.09: 261019
+	1. Added global proxy generation. Proxy size and automatic generation are set in Preferences.
+	2. Proxies are created automatically for imported footage and for footage in an opened
+	   project that has no proxy. Proxies are ProRes Proxy.
+	3. Footage with a proxy shows a blue "P" badge in the Project panel.
+	4. Replaced the per-clip proxy dialog with "Regenerate Proxy" and "Restore Original" in the
+	   Project panel's Proxy menu.
+	5. Set up git for this fork with a baseline commit and committed the mak build script.
+
+v1.09: 261020
+	1. Export: added NVIDIA NVENC and VAAPI (AMD/Intel) H.264 and H.265 encoders. They are
+	   listed only when the GPU is available, and encode much faster than the CPU encoders.
+	2. Export quality: the default is now 23 for H.264 and 28 for H.265 (was 36). The label
+	   and help text follow the encoder in use, and a short note under the value explains
+	   that lower numbers give better quality and larger files.
+	3. Playback: hardware decoding now tries CUDA (Nvidia) on Linux when VAAPI is not
+	   available, so Nvidia GPUs are used for playback.
+	4. Proxies: H.264 footage is decoded on the Nvidia GPU as well as HEVC. VAAPI decoding
+	   is used when available. Proxy files are deleted when their media is removed from the
+	   project. The Media Properties dialog shows which decoder made the proxy.
+	5. Proxy generation logs the start and end of each file, how long it took, and the file
+	   sizes.
+	6. J and L shuttle now goes up to 5x (was 3x).
+	7. With Audio Scrubbing turned off in Preferences, J and L shuttle playback is silent.
