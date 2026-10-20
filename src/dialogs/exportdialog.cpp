@@ -682,6 +682,7 @@ void ExportDialog::vcodec_changed(int index) {
 
 void ExportDialog::comp_type_changed(int) {
   videobitrateSpinbox->setToolTip("");
+  videoQualityHelpLabel->setVisible(false);
   videobitrateSpinbox->setMinimum(0);
   videobitrateSpinbox->setMaximum(99.99);
   switch (compressionTypeCombobox->currentData().toInt()) {
@@ -690,15 +691,37 @@ void ExportDialog::comp_type_changed(int) {
       videoBitrateLabel->setText(tr("Bitrate (Mbps):"));
       videobitrateSpinbox->setValue(qMax(0.5, (double)qRound((0.01528 * amber::ActiveSequence->height) - 4.5)));
       break;
-    case COMPRESSION_TYPE_CFR:
-      videoBitrateLabel->setText(tr("Quality (CRF):"));
+    case COMPRESSION_TYPE_CFR: {
+      // The GPU encoders have their own quality controls, so the label and help text follow the encoder in use
+      QString encoder = vcodecCombobox->currentData(Qt::UserRole + 1).toString();
+      if (encoder.endsWith("_nvenc")) {
+        videoBitrateLabel->setText(tr("Quality (CQ):"));
+        videoQualityHelpLabel->setText(tr("Lower numbers give better quality and larger files. 0 = automatic, not lossless."));
+        videobitrateSpinbox->setToolTip(
+            tr("Quality (NVENC constant quality). Lower numbers give better quality and larger files.\n\n"
+               "0 = automatic (not lossless)\n23 = high quality\n51 = lowest quality possible\n\n"
+               "The same number is not identical to CRF, so check the result."));
+      } else if (encoder.endsWith("_vaapi")) {
+        videoBitrateLabel->setText(tr("Quality (QP):"));
+        videoQualityHelpLabel->setText(tr("Lower numbers give better quality and larger files. 0 = highest quality."));
+        videobitrateSpinbox->setToolTip(
+            tr("Quality (constant QP). Lower numbers give better quality and larger files.\n\n"
+               "0 = highest quality, very large files\n23 = high quality\n51 = lowest quality possible\n\n"
+               "The same number is not identical to CRF, so check the result."));
+      } else {
+        videoBitrateLabel->setText(tr("Quality (CRF):"));
+        videoQualityHelpLabel->setText(tr("Lower numbers give better quality and larger files. 23 = high quality."));
+        videobitrateSpinbox->setToolTip(
+            tr("Quality Factor. Lower numbers give better quality and larger files.\n\n"
+               "0 = lossless\n17-18 = visually lossless (compressed, but unnoticeable)\n23 = high "
+               "quality\n51 = lowest quality possible"));
+      }
       // Defaults follow each encoder's own: libx264/h264_nvenc 23, libx265/hevc_nvenc 28
       videobitrateSpinbox->setValue(vcodecCombobox->currentData().toInt() == AV_CODEC_ID_H265 ? 28 : 23);
       videobitrateSpinbox->setMaximum(51);
-      videobitrateSpinbox->setToolTip(
-          tr("Quality Factor:\n\n0 = lossless\n17-18 = visually lossless (compressed, but unnoticeable)\n23 = high "
-             "quality\n51 = lowest quality possible"));
+      videoQualityHelpLabel->setVisible(true);
       break;
+    }
     case COMPRESSION_TYPE_TARGETSIZE:
       videoBitrateLabel->setText(tr("Target File Size (MB):"));
       videobitrateSpinbox->setValue(100);
@@ -787,10 +810,15 @@ void ExportDialog::setup_ui() {
   videobitrateSpinbox->setMaximum(100);
   videobitrateSpinbox->setValue(2);
   videoGridLayout->addWidget(videobitrateSpinbox, 5, 1, 1, 1);
+  videoQualityHelpLabel = new QLabel(videoGroupbox);
+  videoQualityHelpLabel->setWordWrap(true);
+  videoQualityHelpLabel->setStyleSheet("color: gray;");
+  videoQualityHelpLabel->setVisible(false);
+  videoGridLayout->addWidget(videoQualityHelpLabel, 6, 0, 1, 2);
 
   QPushButton* advanced_video_button = new QPushButton(tr("Advanced"));
   connect(advanced_video_button, &QPushButton::clicked, this, &ExportDialog::open_advanced_video_dialog);
-  videoGridLayout->addWidget(advanced_video_button, 6, 1);
+  videoGridLayout->addWidget(advanced_video_button, 7, 1);
 
   verticalLayout->addWidget(videoGroupbox);
 

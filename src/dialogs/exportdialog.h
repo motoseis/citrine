@@ -217,6 +217,11 @@ private:
   QLabel* videoBitrateLabel;
 
   /**
+   * @brief Always-visible note under the quality value explaining its scale; only shown for quality-based export
+   */
+  QLabel* videoQualityHelpLabel;
+
+  /**
    * @brief SpinBox for the exported video's frame rate
    */
   QDoubleSpinBox* framerateSpinbox;
