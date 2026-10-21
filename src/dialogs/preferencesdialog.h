@@ -64,6 +64,7 @@ private slots:
    * @brief Override of accept to save preferences to Config.
    */
   void accept() override;
+  void done(int r) override;
 
   /**
    * @brief Reset all selected shortcuts in keyboard_tree to their defaults

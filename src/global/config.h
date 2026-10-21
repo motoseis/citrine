@@ -440,6 +440,20 @@ struct Config {
   QString css_path;
 
   /**
+   * @brief Size and position of the Preferences window, base64-encoded from QWidget::saveGeometry()
+   *
+   * **EMPTY** until the Preferences window has been closed once, in which case it opens at its default size.
+   */
+  QString preferences_geometry;
+
+  /**
+   * @brief Column widths of the Preferences keyboard shortcut list, base64-encoded from QHeaderView::saveState()
+   *
+   * **EMPTY** until the Preferences window has been closed once, in which case the default column widths are used.
+   */
+  QString keyboard_shortcut_layout;
+
+  /**
    * @brief Number of lines that an Effect's textbox has
    *
    * The height of a Effect's textbox field in terms of lines.

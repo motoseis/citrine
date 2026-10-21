@@ -39,6 +39,7 @@
 #include <QList>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
+#include <QHeaderView>
 #include <QMessageBox>
 #include <QMediaDevices>
 #include <QAudioDevice>
@@ -89,9 +90,18 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) :
 {
   setWindowTitle(tr("Preferences"));
 
+  restoreGeometry(QByteArray::fromBase64(amber::CurrentConfig.preferences_geometry.toLatin1()));
+
   setup_ui();
 
   setup_kbd_shortcuts(amber::MainWindow->menuBar());
+
+  // restore the shortcut list's column widths, or use a default wide enough for the action names
+  if (amber::CurrentConfig.keyboard_shortcut_layout.isEmpty()) {
+    keyboard_tree->setColumnWidth(0, 300);
+  } else {
+    keyboard_tree->header()->restoreState(QByteArray::fromBase64(amber::CurrentConfig.keyboard_shortcut_layout.toLatin1()));
+  }
 
   // set up default sequence
   default_sequence.name = tr("Default Sequence");
@@ -183,6 +193,13 @@ void PreferencesDialog::setup_kbd_shortcuts(QMenuBar* menubar) {
       key_shortcut_fields.append(editor);
     }
   }
+}
+
+void PreferencesDialog::done(int r) {
+  // remember the window's size and position for next time it opens
+  amber::CurrentConfig.preferences_geometry = QString::fromLatin1(saveGeometry().toBase64());
+  amber::CurrentConfig.keyboard_shortcut_layout = QString::fromLatin1(keyboard_tree->header()->saveState().toBase64());
+  QDialog::done(r);
 }
 
 void PreferencesDialog::accept() {
