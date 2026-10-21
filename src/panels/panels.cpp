@@ -40,6 +40,16 @@ UndoHistoryPanel* panel_undo_history = nullptr;
 
 void update_ui(bool modified, bool scrubbing) {
   if (!scrubbing && panel_effect_controls != nullptr) {
+    // Selecting clips brings up the Effect Controls, so their properties are visible straight away
+    static QVector<Clip*> previously_selected;
+    QVector<Clip*> selected;
+    if (amber::ActiveSequence != nullptr) selected = amber::ActiveSequence->SelectedClips(false);
+    if (!selected.isEmpty() && selected != previously_selected) {
+      panel_effect_controls->show();
+      panel_effect_controls->raise();
+    }
+    previously_selected = selected;
+
     if (modified) {
       panel_effect_controls->SetClips();
     }

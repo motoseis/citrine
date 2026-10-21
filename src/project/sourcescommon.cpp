@@ -393,6 +393,8 @@ void SourcesCommon::OpenSelectedMediaInMediaViewerFromAction()
 void SourcesCommon::OpenSelectedMediaInMediaViewer(Media* item) {
   if (item->get_type() != MEDIA_TYPE_FOLDER) {
     panel_footage_viewer->set_media(item);
+    panel_footage_viewer->show();
+    panel_footage_viewer->raise();
     panel_footage_viewer->setFocus();
   }
 }
