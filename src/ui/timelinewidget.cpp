@@ -88,6 +88,12 @@ bool same_sign(int a, int b) {
   return (a < 0) == (b < 0);
 }
 
+// True while the media's proxy is still being generated, so it can't be placed on the timeline yet
+static bool proxy_pending(Media* media) {
+  Footage* footage = (media != nullptr) ? media->to_footage() : nullptr;
+  return footage != nullptr && footage->proxy && footage->proxy_path.isEmpty();
+}
+
 void TimelineWidget::dragEnterEvent(QDragEnterEvent *event) {
   bool import_init = false;
 
@@ -143,6 +149,17 @@ void TimelineWidget::dragEnterEvent(QDragEnterEvent *event) {
         import_init = true;
         panel_timeline->importing_files = true;
       }
+    }
+  }
+
+  // Don't allow dropping footage whose proxy is still being generated; the user can retry once it's done
+  for (const auto& data : media_list) {
+    if (proxy_pending(data.media())) {
+      amber::MainWindow->statusBar()->showMessage(
+          tr("Waiting for the proxy of %1 to finish").arg(data.media()->get_name()), 3000);
+      panel_timeline->importing_files = false;
+      event->ignore();
+      return;
     }
   }
 
