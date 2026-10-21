@@ -1156,6 +1156,9 @@ void MainWindow::closeEvent(QCloseEvent* e) {
       QString config_fn = config_dir.filePath("config.xml");
 
       // save settings
+      // remember the window's size and position so the next launch matches this one
+      amber::CurrentConfig.main_window_geometry = QString::fromLatin1(saveGeometry().toBase64());
+
       amber::CurrentConfig.save(config_fn);
 
       // save panel layout

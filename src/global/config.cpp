@@ -127,6 +127,7 @@ constexpr StringEntry kStringEntries[] = {
     {"CSSPath", &Config::css_path},
     {"PreferencesGeometry", &Config::preferences_geometry},
     {"KeyboardShortcutLayout", &Config::keyboard_shortcut_layout},
+    {"MainWindowGeometry", &Config::main_window_geometry},
     {"PreferredAudioOutput", &Config::preferred_audio_output},
     {"PreferredAudioInput", &Config::preferred_audio_input},
     {"LanguageFile", &Config::language_file},
@@ -254,6 +255,7 @@ void Config::save(QString path) {
   stream.writeTextElement("CSSPath", css_path);
   stream.writeTextElement("PreferencesGeometry", preferences_geometry);
   stream.writeTextElement("KeyboardShortcutLayout", keyboard_shortcut_layout);
+  stream.writeTextElement("MainWindowGeometry", main_window_geometry);
   stream.writeTextElement("EffectTextboxLines", QString::number(effect_textbox_lines));
   stream.writeTextElement("UseSoftwareFallback", QString::number(use_software_fallback));
   stream.writeTextElement("CenterTimelineTimecodes", QString::number(center_timeline_timecodes));

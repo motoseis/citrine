@@ -454,6 +454,13 @@ struct Config {
   QString keyboard_shortcut_layout;
 
   /**
+   * @brief Size, position and state of the main window, base64-encoded from QWidget::saveGeometry()
+   *
+   * **EMPTY** until the program has been closed once, in which case the window opens at half the screen size.
+   */
+  QString main_window_geometry;
+
+  /**
    * @brief Number of lines that an Effect's textbox has
    *
    * The height of a Effect's textbox field in terms of lines.

@@ -271,6 +271,9 @@ int main(int argc, char *argv[]) {
   }
   if (launch_fullscreen) {
     w.showFullScreen();
+  } else if (w.restoreGeometry(QByteArray::fromBase64(amber::CurrentConfig.main_window_geometry.toLatin1()))) {
+    // same size, position and state as when the program was last closed
+    w.show();
   } else {
     //    w.showMaximized();
     QScreen *screen = QGuiApplication::primaryScreen();
