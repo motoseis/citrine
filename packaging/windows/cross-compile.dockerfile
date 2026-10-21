@@ -46,7 +46,7 @@ RUN git clone https://github.com/xiph/rnnoise /tmp/rnnoise && \
     mingw64-configure --prefix=/usr/x86_64-w64-mingw32/sys-root/mingw && \
     make && \
     make install && \
-    rm -rf /tmp/rnnoise    rm /tmp/frei0r.zip
+    rm -rf /tmp/rnnoise
 
 RUN mingw64-cmake -DCMAKE_BUILD_TYPE=Release \
       ${GIT_HASH:+-DGIT_HASH=${GIT_HASH}} \
@@ -62,11 +62,16 @@ RUN dnf install -y curl unzip zip mingw64-nsis mingw-nsis-base && dnf clean all
 
 COPY packaging/ /packaging/
 
-# Download pre-built Frei0r plugins for Windows
-RUN curl -sL -o /tmp/frei0r.zip \
-      "https://github.com/dyne/frei0r/releases/download/v2.5.4/frei0r-v2.5.4_win64.zip" && \
-    mkdir -p /tmp/frei0r && cd /tmp/frei0r && unzip -q /tmp/frei0r.zip && \
-    rm /tmp/frei0r.zip
+# Build Frei0r plugins for Windows from source. The pre-built v2.5.4 win64 zip is linked against the debug C runtime
+# (ucrtbased.dll, VCRUNTIME140_1D.dll), so most of its plugins fail to load on a normal Windows PC.
+RUN curl -sL -o /tmp/frei0r.tar.gz "https://github.com/dyne/frei0r/archive/refs/tags/v2.5.4.tar.gz" && \
+    mkdir -p /tmp/frei0r-src /tmp/frei0r-build && \
+    tar -xzf /tmp/frei0r.tar.gz -C /tmp/frei0r-src --strip-components=1 && \
+    rm /tmp/frei0r.tar.gz && \
+    cd /tmp/frei0r-build && \
+    mingw64-cmake -DCMAKE_BUILD_TYPE=Release -DWITHOUT_OPENCV=ON -DWITHOUT_FACERECOGNITION=ON \
+      -DWITHOUT_CAIRO=ON -DWITHOUT_GAVL=ON /tmp/frei0r-src && \
+    make -j$(nproc)
 
 # Collect everything into /out
 RUN SYSROOT=/usr/x86_64-w64-mingw32/sys-root/mingw && \
@@ -77,7 +82,8 @@ RUN SYSROOT=/usr/x86_64-w64-mingw32/sys-root/mingw && \
     cp "${SYSROOT}/lib/qt6/plugins/imageformats/"*.dll /out/imageformats/ 2>/dev/null || true && \
     cp "${SYSROOT}/lib/qt6/plugins/multimedia/"*.dll /out/multimedia/ 2>/dev/null || true && \
     cp /src/effects/shaders/*.xml /src/effects/shaders/*.frag /src/effects/shaders/*.vert /out/effects/ 2>/dev/null || true && \
-    cp -r /tmp/frei0r/frei0r-*/. /out/effects/frei0r-1/ 2>/dev/null || true && \
+    mkdir -p /out/effects/frei0r-1 && \
+    find /tmp/frei0r-build -name '*.dll' -exec cp -n -t /out/effects/frei0r-1/ {} + && \
     cp /src/build/*.qm /out/ts/ 2>/dev/null || true && \
     mkdir -p /out/exportpresets && \
     cp /src/exportpresets/* /out/exportpresets/ 2>/dev/null || true
