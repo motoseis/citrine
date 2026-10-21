@@ -804,37 +804,37 @@ void MainWindow::setup_menus() {
   window_menu = MenuHelper::create_submenu(menuBar, this, SLOT(windowMenu_About_To_Be_Shown()));
 
   window_project_action =
-      MenuHelper::create_menu_action(window_menu, "panelproject", this, SLOT(toggle_panel_visibility()));
+      MenuHelper::create_menu_action(window_menu, "panelproject", this, SLOT(show_panel_visibility()));
   window_project_action->setCheckable(true);
   window_project_action->setData(reinterpret_cast<quintptr>(panel_project));
 
   window_effectcontrols_action =
-      MenuHelper::create_menu_action(window_menu, "paneleffectcontrols", this, SLOT(toggle_panel_visibility()));
+      MenuHelper::create_menu_action(window_menu, "paneleffectcontrols", this, SLOT(show_panel_visibility()));
   window_effectcontrols_action->setCheckable(true);
   window_effectcontrols_action->setData(reinterpret_cast<quintptr>(panel_effect_controls));
 
   window_timeline_action =
-      MenuHelper::create_menu_action(window_menu, "paneltimeline", this, SLOT(toggle_panel_visibility()));
+      MenuHelper::create_menu_action(window_menu, "paneltimeline", this, SLOT(show_panel_visibility()));
   window_timeline_action->setCheckable(true);
   window_timeline_action->setData(reinterpret_cast<quintptr>(panel_timeline));
 
   window_graph_editor_action =
-      MenuHelper::create_menu_action(window_menu, "panelgrapheditor", this, SLOT(toggle_panel_visibility()));
+      MenuHelper::create_menu_action(window_menu, "panelgrapheditor", this, SLOT(show_panel_visibility()));
   window_graph_editor_action->setCheckable(true);
   window_graph_editor_action->setData(reinterpret_cast<quintptr>(panel_graph_editor));
 
   window_footageviewer_action =
-      MenuHelper::create_menu_action(window_menu, "panelfootageviewer", this, SLOT(toggle_panel_visibility()));
+      MenuHelper::create_menu_action(window_menu, "panelfootageviewer", this, SLOT(show_panel_visibility()));
   window_footageviewer_action->setCheckable(true);
   window_footageviewer_action->setData(reinterpret_cast<quintptr>(panel_footage_viewer));
 
   window_sequenceviewer_action =
-      MenuHelper::create_menu_action(window_menu, "panelsequenceviewer", this, SLOT(toggle_panel_visibility()));
+      MenuHelper::create_menu_action(window_menu, "panelsequenceviewer", this, SLOT(show_panel_visibility()));
   window_sequenceviewer_action->setCheckable(true);
   window_sequenceviewer_action->setData(reinterpret_cast<quintptr>(panel_sequence_viewer));
 
   window_undo_history_action =
-      MenuHelper::create_menu_action(window_menu, "panelundohistory", this, SLOT(toggle_panel_visibility()));
+      MenuHelper::create_menu_action(window_menu, "panelundohistory", this, SLOT(show_panel_visibility()));
   window_undo_history_action->setCheckable(true);
   window_undo_history_action->setData(reinterpret_cast<quintptr>(panel_undo_history));
 
@@ -1471,6 +1471,19 @@ void MainWindow::import_subtitle() {
 
   // Scroll video area to reveal the track where the subtitle was placed
   panel_timeline->scroll_to_track(track);
+}
+
+void MainWindow::show_panel_visibility() {
+  QAction* action = static_cast<QAction*>(sender());
+  QDockWidget* w = reinterpret_cast<QDockWidget*>(action->data().value<quintptr>());
+
+  // show and bring to front (a tabbed panel becomes its tab's current page), so the shortcut never hides it
+  w->show();
+  w->raise();
+
+  // layout has changed, we're no longer in maximized panel mode,
+  // so we clear this byte array
+  temp_panel_state.clear();
 }
 
 void MainWindow::toggle_panel_visibility() {

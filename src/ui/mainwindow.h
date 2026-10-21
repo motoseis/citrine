@@ -198,6 +198,7 @@ class MainWindow : public QMainWindow {
    * visibility.
    */
   void toggle_panel_visibility();
+  void show_panel_visibility();
 
   /**
    * @brief Open the Relink Media dialog to find missing media files.
