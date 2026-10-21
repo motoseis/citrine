@@ -50,7 +50,7 @@ RUN git clone https://github.com/xiph/rnnoise /tmp/rnnoise && \
 
 RUN mingw64-cmake -DCMAKE_BUILD_TYPE=Release \
       ${GIT_HASH:+-DGIT_HASH=${GIT_HASH}} \
-      -DAMBER_VERSION=${VERSION} \
+      -DCITRINE_VERSION=${VERSION} \
       -DQT_HOST_PATH=/usr \
       -DQT_HOST_PATH_CMAKE_DIR=/usr/lib64/cmake .. && \
     make -j$(nproc)
@@ -71,7 +71,7 @@ RUN curl -sL -o /tmp/frei0r.zip \
 # Collect everything into /out
 RUN SYSROOT=/usr/x86_64-w64-mingw32/sys-root/mingw && \
     mkdir -p /out/platforms /out/imageformats /out/multimedia /out/effects /out/ts && \
-    cp amber-editor.exe /out/ && \
+    cp citrine-editor.exe /out/ && \
     cp "${SYSROOT}/bin/"*.dll /out/ && \
     cp "${SYSROOT}/lib/qt6/plugins/platforms/qwindows.dll" /out/platforms/ && \
     cp "${SYSROOT}/lib/qt6/plugins/imageformats/"*.dll /out/imageformats/ 2>/dev/null || true && \
@@ -89,17 +89,17 @@ RUN cd /usr/share/nsis/Stubs && \
 
 # Build NSIS installer
 RUN cd /packaging/windows/nsis && \
-    cp -r /out amber && \
+    cp -r /out citrine && \
     cp /LICENSE . && \
-    makensis -DX64 amber.nsi && \
-    cp *.exe /out/amber-setup.exe
+    makensis -DX64 citrine.nsi && \
+    cp *.exe /out/citrine-setup.exe
 
 # Build portable zip (same content as NSIS + LICENSE)
 RUN cd /packaging/windows/nsis && \
-    cp /LICENSE amber/ && \
-    zip -r /out/amber-portable.zip amber/
+    cp /LICENSE citrine/ && \
+    zip -r /out/citrine-portable.zip citrine/
 
 # --- Output stage (for --output) ---
 FROM scratch AS installer
-COPY --from=package /out/amber-setup.exe /amber-setup.exe
-COPY --from=package /out/amber-portable.zip /amber-portable.zip
+COPY --from=package /out/citrine-setup.exe /citrine-setup.exe
+COPY --from=package /out/citrine-portable.zip /citrine-portable.zip

@@ -5,15 +5,15 @@ Target amd64-unicode
 !define MUI_ICON "install icon.ico"
 !define MUI_UNICON "uninstall icon.ico"
 
-!define APP_NAME "Amber"
-!define APP_TARGET "amber-editor"
+!define APP_NAME "Citrine"
+!define APP_TARGET "citrine-editor"
 
-!define MUI_FINISHPAGE_RUN "$INSTDIR\amber-editor.exe"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\citrine-editor.exe"
 
 SetCompressor lzma
 
 Name ${APP_NAME}
-OutFile "amber-setup.exe"
+OutFile "citrine-setup.exe"
 
 !ifdef X64
 InstallDir "$PROGRAMFILES64\${APP_NAME}"
@@ -29,18 +29,18 @@ InstallDir "$PROGRAMFILES32\${APP_NAME}"
 
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 !define MUI_FINISHPAGE_RUN_TEXT "Run ${APP_NAME}"
-!define MUI_FINISHPAGE_RUN_FUNCTION "LaunchAmber"
+!define MUI_FINISHPAGE_RUN_FUNCTION "LaunchCitrine"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_LANGUAGE "English"
 
-Section "Amber (required)"
+Section "Citrine (required)"
 
 	SectionIn RO
 
 	SetOutPath $INSTDIR
 
-	File /r amber\*
+	File /r citrine\*
 
 	WriteUninstaller "$INSTDIR\uninstall.exe"
 
@@ -56,12 +56,12 @@ Section "Create Start Menu shortcut"
 	CreateShortCut "$SMPROGRAMS\${APP_NAME}\Uninstall ${APP_NAME}.lnk" "$INSTDIR\uninstall.exe"
 SectionEnd
 
-Section "Associate *.ove files with Amber"
-	WriteRegStr HKCR ".ove" "" "AmberEditor.OVEFile"
+Section "Associate *.ove files with Citrine"
+	WriteRegStr HKCR ".ove" "" "CitrineEditor.OVEFile"
 	WriteRegStr HKCR ".ove" "Content Type" "application/vnd.olive-project"
-	WriteRegStr HKCR "AmberEditor.OVEFile" "" "Amber project file"
-	WriteRegStr HKCR "AmberEditor.OVEFile\DefaultIcon" "" "$INSTDIR\amber-editor.exe,1"
-	WriteRegStr HKCR "AmberEditor.OVEFile\shell\open\command" "" "$\"$INSTDIR\amber-editor.exe$\" $\"%1$\""
+	WriteRegStr HKCR "CitrineEditor.OVEFile" "" "Citrine project file"
+	WriteRegStr HKCR "CitrineEditor.OVEFile\DefaultIcon" "" "$INSTDIR\citrine-editor.exe,1"
+	WriteRegStr HKCR "CitrineEditor.OVEFile\shell\open\command" "" "$\"$INSTDIR\citrine-editor.exe$\" $\"%1$\""
 	System::Call 'shell32.dll::SHChangeNotify(i, i, i, i) v (0x08000000, 0, 0, 0)'
 SectionEnd
 
@@ -76,12 +76,12 @@ Section "uninstall"
 	rmdir /r "$SMPROGRAMS\${APP_NAME}"
 
 	DeleteRegKey HKCR ".ove"
-	DeleteRegKey HKCR "AmberEditor.OVEFile"
-	DeleteRegKey HKCR "AmberEditor.OVEFile\DefaultIcon" ""
-	DeleteRegKey HKCR "AmberEditor.OVEFile\shell\open\command" ""
+	DeleteRegKey HKCR "CitrineEditor.OVEFile"
+	DeleteRegKey HKCR "CitrineEditor.OVEFile\DefaultIcon" ""
+	DeleteRegKey HKCR "CitrineEditor.OVEFile\shell\open\command" ""
 	System::Call 'shell32.dll::SHChangeNotify(i, i, i, i) v (0x08000000, 0, 0, 0)'
 SectionEnd
 
-Function LaunchAmber
+Function LaunchCitrine
 	ExecShell "" "$INSTDIR\${APP_TARGET}.exe"
 FunctionEnd
