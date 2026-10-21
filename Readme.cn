@@ -90,3 +90,21 @@ v1.09: 261020
 	   sizes.
 	6. J and L shuttle now goes up to 5x (was 3x).
 	7. With Audio Scrubbing turned off in Preferences, J and L shuttle playback is silent.
+
+v1.09: 261021
+	1. Released as v1.09 on GitHub (AppImage, Windows installer, and Windows portable zip).
+	2. Dropping footage onto the timeline waits until its proxy has finished. The status bar
+	   says which clip is still being processed.
+	3. The Window menu's Effect Controls and Media Viewer items (and their shortcuts) show and
+	   bring the panel to the front, instead of hiding it. Previously, toggling one of these
+	   tabbed panels revealed the other one.
+	4. Selecting clips on the timeline opens Effect Controls. Double-clicking media in the
+	   Project panel opens the Media Viewer.
+	5. The main window remembers its size and position across restarts.
+	6. The Preferences window remembers its size, and the keyboard shortcut list remembers its
+	   column widths. The Action column is wider by default.
+	7. Linux packaging uses the Citrine names. The desktop entry launches citrine-editor.
+	8. Windows packaging uses the Citrine names: citrine-setup.exe, citrine-portable.zip,
+	   citrine-editor.exe, and a Citrine icon.
+	9. Frei0r effects on Windows are built from source, so they load on a normal Windows PC.
+	   The previous download was built against the debug runtime, which most of them needed.
