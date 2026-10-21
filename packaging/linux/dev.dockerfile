@@ -77,8 +77,8 @@ CMD ["bash", "-c", "\
       --plugin qt \
       --output appimage \
       --exclude-library 'libva*' \
-      --desktop-file /tmp/AppDir/usr/share/applications/org.ambervideoeditor.Amber.desktop \
-      --icon-file /tmp/AppDir/usr/share/icons/hicolor/256x256/apps/org.ambervideoeditor.Amber.png && \
+      --desktop-file /tmp/AppDir/usr/share/applications/org.citrinevideoeditor.Citrine.desktop \
+      --icon-file /tmp/AppDir/usr/share/icons/hicolor/256x256/apps/org.citrinevideoeditor.Citrine.png && \
     mkdir -p /out && \
     mv Amber*.AppImage /out/ 2>/dev/null || mv *.AppImage /out/ 2>/dev/null || true \
 "]
