@@ -85,7 +85,7 @@ WORKDIR /src/build
 RUN cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
       -DCMAKE_PREFIX_PATH=${Qt6_DIR} \
       ${GIT_HASH:+-DGIT_HASH=${GIT_HASH}} \
-      -DAMBER_VERSION=${VERSION} .. && \
+      -DCITRINE_VERSION=${VERSION} .. && \
     make -j$(nproc)
 
 # Remove Qt's FFmpeg media plugin before bundling — we use our own FFmpeg
