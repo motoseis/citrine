@@ -114,3 +114,6 @@ v1.09.01: 261022
 	2. Faster proxy generation with VAAPI hardware decoding. Frames are shrunk on the GPU before being copied back, which took the test clip from about 80 seconds to about 60.
 	3. Software decoding for proxies uses all CPU cores.
 	4. Proxy generation logs the time spent in each stage (decode, copy, scale, encode, write) to help diagnose slow proxies.
+
+v1.09.02: 261022
+	1. Fixed the Linux AppImage build, which failed to compile the VAAPI proxy code against the FFmpeg headers in Ubuntu 24.04.
