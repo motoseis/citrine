@@ -108,3 +108,9 @@ v1.09: 261021
 	   citrine-editor.exe, and a Citrine icon.
 	9. Frei0r effects on Windows are built from source, so they load on a normal Windows PC.
 	   The previous download was built against the debug runtime, which most of them needed.
+
+v1.09.01: 261022
+	1. Fixed proxies that played for a second or two and then froze into garbage on some Linux laptops using VAAPI hardware decoding.
+	2. Faster proxy generation with VAAPI hardware decoding. Frames are shrunk on the GPU before being copied back, which took the test clip from about 80 seconds to about 60.
+	3. Software decoding for proxies uses all CPU cores.
+	4. Proxy generation logs the time spent in each stage (decode, copy, scale, encode, write) to help diagnose slow proxies.
