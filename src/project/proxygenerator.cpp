@@ -40,6 +40,9 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
 #include <libavformat/avformat.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/opt.h>
@@ -74,6 +77,11 @@ static AVCodecContext* open_decoder(const AVCodecParameters* par, const AVCodec*
   if (hw_device != nullptr) {
     ctx->hw_device_ctx = av_buffer_ref(hw_device);
     ctx->get_format = pick_vaapi_format;
+  } else if (!nvdec) {
+    // libavcodec decodes on a single thread unless asked otherwise. Software decoding is the bottleneck for proxies,
+    // so let it use all cores.
+    ctx->thread_count = 0;
+    ctx->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
   }
 
   if (avcodec_open2(ctx, codec, nullptr) < 0) {
@@ -81,6 +89,51 @@ static AVCodecContext* open_decoder(const AVCodecParameters* par, const AVCodec*
     return nullptr;
   }
   return ctx;
+}
+
+// GPU downscaler for VAAPI frames. Scaling before the copy to system memory means only the proxy-sized frame crosses
+// the bus, which is much cheaper than copying the full-resolution source frame and scaling it on the CPU.
+struct VaapiScaler {
+  AVFilterGraph* graph = nullptr;
+  AVFilterContext* src = nullptr;
+  AVFilterContext* sink = nullptr;
+  bool failed = false;
+};
+
+static bool build_vaapi_scaler(AVCodecContext* dec_ctx, const AVFrame* first_frame, int out_w, int out_h,
+                               VaapiScaler& scaler) {
+  scaler.graph = avfilter_graph_alloc();
+  if (scaler.graph == nullptr) return false;
+
+  // The buffer source must have the decoder's hardware frame pool attached before it is initialised
+  scaler.src = avfilter_graph_alloc_filter(scaler.graph, avfilter_get_by_name("buffer"), "in");
+  AVBufferSrcParameters* par = av_buffersrc_parameters_alloc();
+  par->format = AV_PIX_FMT_VAAPI;
+  par->hw_frames_ctx = av_buffer_ref(dec_ctx->hw_frames_ctx);
+  par->width = dec_ctx->width;
+  par->height = dec_ctx->height;
+  par->time_base = AVRational{1, 1000};
+  par->sample_aspect_ratio = dec_ctx->sample_aspect_ratio;
+  // Declare the color properties of the frames that will be fed in. A mismatch makes the filter graph warn on every
+  // frame and may shift the colors of the proxy.
+  par->color_space = first_frame->colorspace;
+  par->color_range = first_frame->color_range;
+  av_buffersrc_parameters_set(scaler.src, par);
+  av_free(par);
+  if (scaler.src == nullptr || avfilter_init_str(scaler.src, nullptr) < 0) return false;
+
+  AVFilterContext* scale = nullptr;
+  QByteArray scale_args = QString("w=%1:h=%2:format=nv12").arg(out_w).arg(out_h).toUtf8();
+  if (avfilter_graph_create_filter(&scale, avfilter_get_by_name("scale_vaapi"), "scale", scale_args.constData(),
+                                   nullptr, scaler.graph) < 0) {
+    return false;
+  }
+  if (avfilter_graph_create_filter(&scaler.sink, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr,
+                                   scaler.graph) < 0) {
+    return false;
+  }
+  if (avfilter_link(scaler.src, 0, scale, 0) < 0 || avfilter_link(scale, 0, scaler.sink, 0) < 0) return false;
+  return avfilter_graph_config(scaler.graph, nullptr) >= 0;
 }
 
 // Proxies are named after the source file plus a short hash of its full path, so same-named clips from different
@@ -165,6 +218,15 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
 
   // Decoder that produced the video frames, recorded on the footage for display
   QString decode_method = "Software";
+
+  // Per-stage timing, accumulated across all frames and logged at the end to show where the transcode spends its time
+  qint64 decode_ns = 0;
+  qint64 transfer_ns = 0;
+  qint64 scale_ns = 0;
+  qint64 encode_ns = 0;
+  qint64 write_ns = 0;
+  qint64 frame_count = 0;
+  QElapsedTimer stage_timer;
 
   // Maps an INPUT stream index to its OUTPUT stream index, or -1 if this input stream is dropped entirely (not written
   // to the proxy at all).
@@ -297,11 +359,36 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
   AVFrame* dec_frame = av_frame_alloc();
   AVFrame* sw_frame = av_frame_alloc();
   AVFrame* enc_frame = av_frame_alloc();
+  AVFrame* gpu_frame = av_frame_alloc();
+  QVector<VaapiScaler> scalers(nb_streams);
 
   int64_t total_duration = input_fmt_ctx->duration > 0 ? input_fmt_ctx->duration : 1;
 
+  // Timestamp the next decoded frame gets when the decoder doesn't provide one, per stream
+  QVector<int64_t> next_frame_pts(nb_streams, 0);
+
   auto encode_decoded_frames = [&](int stream_index) {
-    while (avcodec_receive_frame(input_streams.at(stream_index), dec_frame) >= 0) {
+    while (true) {
+      stage_timer.restart();
+      int recv_ret = avcodec_receive_frame(input_streams.at(stream_index), dec_frame);
+      decode_ns += stage_timer.nsecsElapsed();
+      if (recv_ret < 0) break;
+      frame_count++;
+
+      AVFrame* src_frame = dec_frame;
+
+      // Some decoders (VAAPI here) return frames with no timestamp, which leaves the encoder without timestamps and
+      // the proxy with broken timing. Use the decoder's timestamp when it has one, otherwise continue from the
+      // previous frame by one frame duration, the same way FFmpeg's own tools fill in missing timestamps.
+      AVStream* in_stream = input_fmt_ctx->streams[stream_index];
+      AVRational frame_rate = in_stream->avg_frame_rate.num > 0 ? in_stream->avg_frame_rate : in_stream->r_frame_rate;
+      int64_t frame_step = frame_rate.num > 0 ? av_rescale_q(1, av_inv_q(frame_rate), in_stream->time_base) : 1;
+      dec_frame->pts = dec_frame->best_effort_timestamp != AV_NOPTS_VALUE ? dec_frame->best_effort_timestamp
+                                                                          : next_frame_pts[stream_index];
+      next_frame_pts[stream_index] = dec_frame->pts + frame_step;
+      // Saved here because handing the frame to the GPU scaler empties it
+      const int64_t decoded_pts = dec_frame->pts;
+
       // Frame timestamps are in the stream's time base but the total duration is in AV_TIME_BASE (microseconds), so
       // convert the timestamp before comparing them
       int64_t pts = dec_frame->best_effort_timestamp;
@@ -310,17 +397,50 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
         current_progress = qBound(0.0, double(pts_us) / double(total_duration) * 100.0, 100.0);
       }
 
-      AVFrame* src_frame = dec_frame;
       if (dec_frame->format == AV_PIX_FMT_VAAPI) {
-        // VAAPI frames live in GPU memory, so copy them to system memory before scaling
+        // VAAPI frames live in GPU memory, so shrink them to proxy size on the GPU and copy only that to system
+        // memory
         decode_method = "VAAPI";
-        if (av_hwframe_transfer_data(sw_frame, dec_frame, 0) < 0) {
+        VaapiScaler& scaler = scalers[stream_index];
+        if (scaler.graph == nullptr && !scaler.failed) {
+          AVCodecContext* enc = output_streams.at(stream_index);
+          scaler.failed =
+              !build_vaapi_scaler(input_streams.at(stream_index), dec_frame, enc->width, enc->height, scaler);
+          if (scaler.failed) {
+            avfilter_graph_free(&scaler.graph);
+            qWarning() << "Proxy: could not build GPU scaler, copying full-size frames";
+          }
+        }
+
+        // The GPU scaler empties dec_frame, so it has to be read before scaling
+        AVFrame* download_src = dec_frame;
+        if (scaler.graph != nullptr) {
+          stage_timer.restart();
+          bool scaled = av_buffersrc_add_frame(scaler.src, dec_frame) >= 0 &&
+                        av_buffersink_get_frame(scaler.sink, gpu_frame) >= 0;
+          scale_ns += stage_timer.nsecsElapsed();
+          if (!scaled) {
+            qCritical() << "Proxy: GPU scaling failed";
+            av_frame_unref(dec_frame);
+            skip = true;
+            break;
+          }
+          download_src = gpu_frame;
+        }
+
+        stage_timer.restart();
+        int transfer_ret = av_hwframe_transfer_data(sw_frame, download_src, 0);
+        transfer_ns += stage_timer.nsecsElapsed();
+        if (transfer_ret < 0) {
           qCritical() << "Proxy: could not transfer VAAPI frame to system memory";
+          av_frame_unref(gpu_frame);
           av_frame_unref(dec_frame);
           skip = true;
           break;
         }
-        av_frame_copy_props(sw_frame, dec_frame);
+        av_frame_copy_props(sw_frame, download_src);
+        av_frame_unref(gpu_frame);
+        sw_frame->pts = decoded_pts;
         src_frame = sw_frame;
       }
 
@@ -350,13 +470,17 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
         enc_frame->format = enc->pix_fmt;
         av_frame_get_buffer(enc_frame, 32);
 
+        stage_timer.restart();
         sws_scale(sws_contexts.at(stream_index), src_frame->data, src_frame->linesize, 0, src_frame->height,
                   enc_frame->data, enc_frame->linesize);
+        scale_ns += stage_timer.nsecsElapsed();
         enc_frame->pts = src_frame->pts;
         frame_to_encode = enc_frame;
       }
 
+      stage_timer.restart();
       avcodec_send_frame(enc, frame_to_encode);
+      encode_ns += stage_timer.nsecsElapsed();
 
       if (convert) {
         av_frame_unref(enc_frame);
@@ -367,11 +491,18 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
       av_frame_unref(dec_frame);
 
       AVPacket* out_pkt = av_packet_alloc();
-      while (avcodec_receive_packet(output_streams.at(stream_index), out_pkt) >= 0) {
+      while (true) {
+        stage_timer.restart();
+        int packet_ret = avcodec_receive_packet(output_streams.at(stream_index), out_pkt);
+        encode_ns += stage_timer.nsecsElapsed();
+        if (packet_ret < 0) break;
+
         out_pkt->stream_index = out_index[stream_index];
         av_packet_rescale_ts(out_pkt, output_streams.at(stream_index)->time_base,
                              output_fmt_ctx->streams[out_index[stream_index]]->time_base);
+        stage_timer.restart();
         av_interleaved_write_frame(output_fmt_ctx, out_pkt);
+        write_ns += stage_timer.nsecsElapsed();
         av_packet_unref(out_pkt);
       }
       av_packet_free(&out_pkt);
@@ -397,7 +528,9 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
       continue;
     }
 
+    stage_timer.restart();
     avcodec_send_packet(input_streams.at(stream_index), packet);
+    decode_ns += stage_timer.nsecsElapsed();
     av_packet_unref(packet);
 
     encode_decoded_frames(stream_index);
@@ -441,6 +574,11 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
   av_frame_free(&dec_frame);
   av_frame_free(&sw_frame);
   av_frame_free(&enc_frame);
+  av_frame_free(&gpu_frame);
+  // Graphs hold references to the decoder's frame pool, so free them before the decoders' device goes away
+  for (VaapiScaler& scaler : scalers) {
+    avfilter_graph_free(&scaler.graph);
+  }
 
   for (int i = 0; i < nb_streams; i++) {
     if (input_streams.at(i)) avcodec_free_context(&input_streams[i]);
@@ -459,6 +597,12 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
   qInfo() << "Proxy: end" << footage->url << (success ? "ok" : "failed") << "took"
           << QString::number(timer.elapsed() / 1000.0, 'f', 1) << "s, proxy size"
           << QString::number(QFileInfo(info.path).size() / 1048576.0, 'f', 1) << "MB";
+
+  // Stage times are summed across frames, so they can add up to more than the wall-clock time when threads overlap
+  auto ms = [](qint64 ns) { return QString::number(ns / 1e6, 'f', 0); };
+  qInfo() << "Proxy: timing" << footage->url << "decoder" << decode_method << "frames" << frame_count << "decode"
+          << ms(decode_ns) << "ms, hw transfer" << ms(transfer_ns) << "ms, scale" << ms(scale_ns) << "ms, encode"
+          << ms(encode_ns) << "ms, write" << ms(write_ns) << "ms";
 
   current_progress = 100.0;
 }
