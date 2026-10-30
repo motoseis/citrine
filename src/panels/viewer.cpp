@@ -1015,6 +1015,12 @@ void Viewer::timer_update() {
     panel_timeline->select_from_playhead();
   }
 
+  // Keep the Effect Controls keyframe area following the playhead during playback.
+  // seek() does this for manual seeks, but the playback clock doesn't go through seek().
+  if (main_sequence && panel_effect_controls != nullptr) {
+    panel_effect_controls->scroll_to_frame(seq->playhead);
+  }
+
   update_parents(amber::CurrentConfig.seek_also_selects);
 
   if (playing) {
