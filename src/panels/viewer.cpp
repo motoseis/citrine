@@ -736,7 +736,7 @@ void Viewer::set_sb_max() {
 }
 
 void Viewer::set_playback_speed(int s) {
-  int clamped = qMin(5, qMax(s, -5));
+  int clamped = qMin(10, qMax(s, -10));
   if (clamped == playback_speed) return;  // no change, avoid needless audio reset
   pause();
   playback_speed = clamped;
