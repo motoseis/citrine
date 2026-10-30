@@ -50,16 +50,19 @@ class DrawLineEffect : public Effect {
 
   void draw_route_line(const QVector<QPointF>& points, double timecode);
   void rebuild_path_cache(double reference_timecode, double reference_frame);
+  void update_smoothed_path(int smooth_size);
   QPointF point_at_length_fraction(double t);
   QVector<QPointF> smoothTrajectoryFilter(const QVector<QPointF>& inputPoints, int windowSize = 15,
                                           double curvatureThreshold = 0.5);
 
   bool path_cache_valid_ = false;
   QVector<QPointF> cached_points_;         // one point per frame, raw keyframe positions
-  QVector<double> cached_cumulative_len_;  // cumulative arc length up to cached_points_[i]
+  QVector<QPointF> smoothed_points_;       // cached_points_ run through smoothTrajectoryFilter
+  QVector<double> cached_cumulative_len_;  // cumulative arc length up to smoothed_points_[i]
 
   double cached_total_length_ = 0.0;
-  int cached_frame_count_ = 0;  // how many points/frames the cache above covers
+  int cached_frame_count_ = 0;   // how many points/frames the cache above covers
+  int cached_smooth_size_ = -1;  // smoothing window smoothed_points_ was built with (-1 = stale)
 };
 
 #endif  // DRAWLINEEFFECT_H

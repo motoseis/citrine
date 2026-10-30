@@ -117,26 +117,37 @@ void DrawLineEffect::rebuild_path_cache(double reference_timecode, double refere
     raw_points.append(QPointF(kf_x, kf_y));
   }
 
-  int nsmooth = smooth_fld->GetDoubleAt(reference_timecode);
-  cached_points_ = smoothTrajectoryFilter(raw_points, nsmooth, 0.5);
+  cached_points_ = raw_points;
+  cached_frame_count_ = frame_count;
+  cached_smooth_size_ = -1;  // smoothed_points_ must be rebuilt from the new raw points
+  path_cache_valid_ = true;
+}
+
+/**
+ * @brief Re-smooths the cached keyframe path when the smoothing size changes.
+ * Does nothing if smoothed_points_ already matches smooth_size.
+ */
+void DrawLineEffect::update_smoothed_path(int smooth_size) {
+  if (smooth_size == cached_smooth_size_) return;
+
+  smoothed_points_ = smoothTrajectoryFilter(cached_points_, smooth_size, 0.5);
 
   // Build cumulative arc length at each point
   cached_cumulative_len_.clear();
-  cached_cumulative_len_.reserve(frame_count);
+  cached_cumulative_len_.reserve(smoothed_points_.size());
   cached_cumulative_len_.append(0.0);
-  for (int i = 1; i < cached_points_.size(); ++i) {
-    double step = point_distance(cached_points_[i - 1], cached_points_[i]);
+  for (int i = 1; i < smoothed_points_.size(); ++i) {
+    double step = point_distance(smoothed_points_[i - 1], smoothed_points_[i]);
     cached_cumulative_len_.append(cached_cumulative_len_[i - 1] + step);
   }
   cached_total_length_ = cached_cumulative_len_.isEmpty() ? 0.0 : cached_cumulative_len_.last();
 
-  cached_frame_count_ = frame_count;
-  path_cache_valid_ = true;
+  cached_smooth_size_ = smooth_size;
 }
 
 QPointF DrawLineEffect::point_at_length_fraction(double t) {
-  if (cached_points_.isEmpty()) return QPointF();
-  if (cached_points_.size() == 1 || cached_total_length_ <= 0.0) return cached_points_.first();
+  if (smoothed_points_.isEmpty()) return QPointF();
+  if (smoothed_points_.size() == 1 || cached_total_length_ <= 0.0) return smoothed_points_.first();
 
   double target_length = qBound(0.0, t, 1.0) * cached_total_length_;
 
@@ -150,7 +161,7 @@ QPointF DrawLineEffect::point_at_length_fraction(double t) {
   double seg_len = cached_cumulative_len_[seg + 1] - seg_start_len;
   double local_t = (seg_len > 0.0) ? (target_length - seg_start_len) / seg_len : 0.0;
 
-  return cached_points_[seg] + local_t * (cached_points_[seg + 1] - cached_points_[seg]);
+  return smoothed_points_[seg] + local_t * (smoothed_points_[seg + 1] - smoothed_points_[seg]);
 }
 
 void DrawLineEffect::draw_route_line(const QVector<QPointF>& points, double timecode) {
@@ -222,14 +233,15 @@ void DrawLineEffect::redraw(double timecode) {
     if (!path_cache_valid_ || cached_frame_count_ != int(clip_end - clip_start) + 1) {
       rebuild_path_cache(timecode, current_frame);
     }
+    update_smoothed_path(nsmooth);
     int animated_frames = 0.01 * pcent_fld->GetDoubleAt(timecode) * cached_frame_count_;
     double frame_in_clip = current_frame - clip_start;
     double t = (animated_frames > 1) ? qBound(0.0, frame_in_clip / (animated_frames - 1), 1.0) : 1.0;
 
     double target_length = t * cached_total_length_;
-    for (int i = 0; i < cached_points_.size(); ++i) {
+    for (int i = 0; i < smoothed_points_.size(); ++i) {
       if (cached_cumulative_len_[i] <= target_length) {
-        drawing_points.append(cached_points_[i]);
+        drawing_points.append(smoothed_points_[i]);
       } else {
         break;
       }
