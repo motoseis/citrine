@@ -116,12 +116,8 @@ static bool build_vaapi_scaler(AVCodecContext* dec_ctx, const AVFrame* first_fra
   par->sample_aspect_ratio = dec_ctx->sample_aspect_ratio;
   // Declare the color properties of the frames that will be fed in. A mismatch makes the filter graph warn on every
   // frame and may shift the colors of the proxy.
-#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(11, 0, 0)
   par->color_space = first_frame->colorspace;
   par->color_range = first_frame->color_range;
-#else
-  (void)first_frame;
-#endif
   av_buffersrc_parameters_set(scaler.src, par);
   av_free(par);
   if (scaler.src == nullptr || avfilter_init_str(scaler.src, nullptr) < 0) return false;
@@ -371,6 +367,15 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
   // Timestamp the next decoded frame gets when the decoder doesn't provide one, per stream
   QVector<int64_t> next_frame_pts(nb_streams, 0);
 
+  // Diagnostic: set CITRINE_PROXY_DECODE_ONLY=1 to decode frames and discard them, which isolates decoder cost from
+  // the download, scale and encode stages. The resulting proxy is not playable.
+  const bool decode_only = qEnvironmentVariableIsSet("CITRINE_PROXY_DECODE_ONLY");
+
+  // Experiment: set CITRINE_PROXY_HWFRAME_MAP=1 to map the scaled VAAPI frame into system memory instead of copying
+  // it. Mapping is only used when the driver can do it without a copy; otherwise the copy path runs as before.
+  const bool try_hwframe_map = qEnvironmentVariableIsSet("CITRINE_PROXY_HWFRAME_MAP");
+  bool hwframe_map_failed = false;
+
   auto encode_decoded_frames = [&](int stream_index) {
     while (true) {
       stage_timer.restart();
@@ -378,6 +383,11 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
       decode_ns += stage_timer.nsecsElapsed();
       if (recv_ret < 0) break;
       frame_count++;
+
+      if (decode_only) {
+        av_frame_unref(dec_frame);
+        continue;
+      }
 
       AVFrame* src_frame = dec_frame;
 
@@ -433,7 +443,23 @@ void ProxyGenerator::transcode(const ProxyInfo& info) {
         }
 
         stage_timer.restart();
-        int transfer_ret = av_hwframe_transfer_data(sw_frame, download_src, 0);
+        int transfer_ret = -1;
+        if (try_hwframe_map && !hwframe_map_failed) {
+          sw_frame->format = reinterpret_cast<AVHWFramesContext*>(download_src->hw_frames_ctx->data)->sw_format;
+          sw_frame->width = download_src->width;
+          sw_frame->height = download_src->height;
+          // AV_HWFRAME_MAP_DIRECT makes the call fail instead of silently copying, so a success means no copy happened
+          transfer_ret = av_hwframe_map(sw_frame, download_src, AV_HWFRAME_MAP_READ | AV_HWFRAME_MAP_DIRECT);
+          if (transfer_ret < 0) {
+            hwframe_map_failed = true;
+            qWarning() << "Proxy: av_hwframe_map without copy failed (" << transfer_ret
+                       << "), falling back to copying frames";
+            av_frame_unref(sw_frame);
+          }
+        }
+        if (transfer_ret < 0) {
+          transfer_ret = av_hwframe_transfer_data(sw_frame, download_src, 0);
+        }
         transfer_ns += stage_timer.nsecsElapsed();
         if (transfer_ret < 0) {
           qCritical() << "Proxy: could not transfer VAAPI frame to system memory";
