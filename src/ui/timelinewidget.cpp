@@ -176,7 +176,8 @@ void TimelineWidget::dragEnterEvent(QDragEnterEvent *event) {
       self_created_sequence = create_sequence_from_media(media_list);
       seq = self_created_sequence.get();
     } else {
-      center_scroll_to_playhead(panel_timeline->horizontalScrollBar, panel_timeline->zoom, seq->getEndFrame());
+      // Don't scroll here: the drop point is the frame under the cursor, so moving the view would move the drop.
+      // Dragging near either edge auto-scrolls in dragMoveEvent.
       entry_point = panel_timeline->getTimelineFrameFromScreenPoint(event->position().toPoint().x());
       panel_timeline->drag_frame_start = entry_point + getFrameFromScreenPoint(panel_timeline->zoom, 50);
       // Use the scroll-aware lookup; collapse to V1 (-1) or A1 (0) based on which side the cursor lies on.
