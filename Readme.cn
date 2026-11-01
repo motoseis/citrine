@@ -117,3 +117,4 @@ v1.09.01: 261022
 
 v1.09.02: 261022
 	1. Fixed the Linux AppImage build, which failed to compile the VAAPI proxy code against the FFmpeg headers in Ubuntu 24.04.
+	2. Text effect controls are grouped into sections with spacer rows between them. Reveal sits below the animation controls, Outline moved up above Font, and the default text size is now 70.
