@@ -67,7 +67,6 @@ static QVector<int> grapheme_boundaries(const QString& s) {
   return bounds;
 }
 bool TextEffect::AlwaysUpdate() {
-
   if (!animate_in_bool->GetBoolAt(0)) return false;
 
   if (!amber::ActiveSequence || !parent_clip) return true;  // fail safe if state's unavailable
@@ -93,7 +92,6 @@ bool TextEffect::AlwaysUpdate() {
   return fading_in || fading_out;
 }
 
-
 TextEffect::TextEffect(Clip* c, const EffectMeta* em) : Effect(c, em) {
   SetFlags(Effect::SuperimposeFlag);
 
@@ -104,13 +102,8 @@ TextEffect::TextEffect(Clip* c, const EffectMeta* em) : Effect(c, em) {
   EffectRow* position_row = new EffectRow(this, tr("Position"));
   position_x = new DoubleField(position_row, "posx");
   position_y = new DoubleField(position_row, "posy");
-
-  EffectRow* reveal_row = new EffectRow(this, tr("Reveal %"));
-  reveal_val = new DoubleField(reveal_row, "reveal");
-  reveal_val->SetMinimum(0);
-  reveal_val->SetMaximum(100);
-  reveal_val->SetColumnSpan(2);
-
+  new EffectRow(this, QString("___________"), false, false);
+  // Animate speccs
   EffectRow* animate_row = new EffectRow(this, tr("Animate"));
   animate_in_bool = new BoolField(animate_row, "animatein");
   animate_in_bool->SetColumnSpan(2);
@@ -128,7 +121,28 @@ TextEffect::TextEffect(Clip* c, const EffectMeta* em) : Effect(c, em) {
   EffectRow* rise_row = new EffectRow(this, tr("Rise (px)"));
   animate_rise = new DoubleField(rise_row, "animaterise");
   animate_rise->SetColumnSpan(2);
+  // Animate using keyframes
+  EffectRow* reveal_row = new EffectRow(this, tr("Reveal %, vary with keyframe"));
+  reveal_val = new DoubleField(reveal_row, "reveal");
+  reveal_val->SetMinimum(0);
+  reveal_val->SetMaximum(100);
+  reveal_val->SetColumnSpan(2);
+  new EffectRow(this, QString("___________"), false, false);
+  // Font outline
+  EffectRow* outline_row = new EffectRow(this, tr("Outline"));
+  outline_bool = new BoolField(outline_row, "outline");
+  outline_bool->SetColumnSpan(2);
 
+  EffectRow* outline_color_row = new EffectRow(this, tr("Outline Color"));
+  outline_color = new ColorField(outline_color_row, "outlinecolor");
+  outline_color->SetColumnSpan(2);
+
+  EffectRow* outline_width_row = new EffectRow(this, tr("Outline Width"));
+  outline_width = new DoubleField(outline_width_row, "outlinewidth");
+  outline_width->SetColumnSpan(2);
+  outline_width->SetMinimum(0);
+  new EffectRow(this, QString("___________"), false, false);
+  // Font specs
   EffectRow* font_row = new EffectRow(this, tr("Font"));
   set_font_combobox = new FontField(font_row, "font");
   set_font_combobox->SetColumnSpan(2);
@@ -141,7 +155,7 @@ TextEffect::TextEffect(Clip* c, const EffectMeta* em) : Effect(c, em) {
   EffectRow* color_row = new EffectRow(this, tr("Color"));
   set_color_button = new ColorField(color_row, "color");
   set_color_button->SetColumnSpan(2);
-
+  // Text alignment
   EffectRow* alignment_row = new EffectRow(this, tr("Alignment"));
   halign_field = new ComboField(alignment_row, "halign");
   halign_field->AddItem(tr("Left"), Qt::AlignLeft);
@@ -167,19 +181,6 @@ TextEffect::TextEffect(Clip* c, const EffectMeta* em) : Effect(c, em) {
   EffectRow* padding_row = new EffectRow(this, tr("Padding"));
   padding_field = new DoubleField(padding_row, "padding");
   padding_field->SetColumnSpan(2);
-
-  EffectRow* outline_row = new EffectRow(this, tr("Outline"));
-  outline_bool = new BoolField(outline_row, "outline");
-  outline_bool->SetColumnSpan(2);
-
-  EffectRow* outline_color_row = new EffectRow(this, tr("Outline Color"));
-  outline_color = new ColorField(outline_color_row, "outlinecolor");
-  outline_color->SetColumnSpan(2);
-
-  EffectRow* outline_width_row = new EffectRow(this, tr("Outline Width"));
-  outline_width = new DoubleField(outline_width_row, "outlinewidth");
-  outline_width->SetColumnSpan(2);
-  outline_width->SetMinimum(0);
 
   EffectRow* shadow_row = new EffectRow(this, tr("Shadow"));
   shadow_bool = new BoolField(shadow_row, "shadow");
@@ -210,7 +211,7 @@ TextEffect::TextEffect(Clip* c, const EffectMeta* em) : Effect(c, em) {
   shadow_opacity->SetMaximum(100);
 
   //  size_val->SetDefault(48);
-  size_val->SetDefault(100);
+  size_val->SetDefault(70);
   text_val->SetValueAt(0, tr("Sample"));
   set_color_button->SetValueAt(0, QColor(Qt::yellow));
   halign_field->SetValueAt(0, Qt::AlignLeft);
