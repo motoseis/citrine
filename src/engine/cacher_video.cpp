@@ -519,6 +519,12 @@ int Cacher::RetrieveFrameAndProcess(AVFrame **f)
           bsp->sample_aspect_ratio = frame_->sample_aspect_ratio;
           bsp->time_base = stream->time_base;
           bsp->hw_frames_ctx = nullptr;
+#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(11, 0, 0)
+          // Untagged streams otherwise reach the graph as "unknown" range while the decoded frames say
+          // tv/pc, and libavfilter logs "Changing video frame properties" for every frame.
+          bsp->color_space = frame_->colorspace;
+          bsp->color_range = frame_->color_range;
+#endif
           int set_ret = av_buffersrc_parameters_set(buffersrc_ctx, bsp);
           av_free(bsp);
           if (set_ret < 0) {
