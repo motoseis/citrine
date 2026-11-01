@@ -71,6 +71,7 @@ struct ComposeSequenceParams {
   QShader blendingFrag;
   QShader premultiplyFrag;
   QShader yuvFrag;
+  QShader resolveFrag;
 
   // Main compositing target (PreserveColorContents)
   QRhiTexture* main_tex;
@@ -91,6 +92,10 @@ namespace amber {
 namespace rendering {
 
 QRhiTexture* compose_sequence(ComposeSequenceParams &params);
+
+// Draws src into dst (8-bit) with noise added, so a 16-bit float frame can be read back as RGBA8
+void resolve_to_8bit(ComposeSequenceParams& params, QRhiTexture* src, QRhiTextureRenderTarget* dst,
+                     QRhiRenderPassDescriptor* rpd);
 
 void compose_audio(Viewer* viewer, Sequence *seq, int playback_speed, bool wait_for_mutexes);
 }

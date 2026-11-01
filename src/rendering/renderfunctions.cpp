@@ -39,6 +39,7 @@ extern "C" {
 #include "ui/collapsiblewidget.h"
 
 #include "rendering/audio.h"
+#include "rendering/renderthread.h"
 
 #include "core/math.h"
 #include "global/config.h"
@@ -336,6 +337,15 @@ static void rhi_blit_passthrough(ComposeSequenceParams& params, QRhiTextureRende
            nullptr, skipClipSpaceCorr);
 }
 
+void amber::rendering::resolve_to_8bit(ComposeSequenceParams& params, QRhiTexture* src,
+                                       QRhiTextureRenderTarget* dst, QRhiRenderPassDescriptor* rpd) {
+  QMatrix4x4 mvp;
+  mvp.ortho(-1, 1, -1, 1, -1, 1);
+
+  // No fragment uniforms: the noise is derived from the pixel position inside the shader
+  rhi_blit(params, dst, rpd, src, params.passthroughVert, params.resolveFrag, mvp, QByteArray(), 0);
+}
+
 // Helper: create clip's ping-pong QRhiTexture + render target pairs (replaces QOpenGLFramebufferObject)
 static ClipRhiResources* get_or_create_clip_resources(Clip* c, QRhi* rhi, int width, int height) {
   if (!c) {
@@ -353,7 +363,8 @@ static ClipRhiResources* get_or_create_clip_resources(Clip* c, QRhi* rhi, int wi
     ClipRhiResources* res = new ClipRhiResources();
     res->count = fbo_count;
     for (int j = 0; j < fbo_count; j++) {
-      res->tex[j] = rhi->newTexture(QRhiTexture::RGBA8, QSize(width, height), 1, QRhiTexture::RenderTarget);
+      res->tex[j] = rhi->newTexture(RenderThread::IntermediateFormat(), QSize(width, height), 1,
+                                    QRhiTexture::RenderTarget);
       res->tex[j]->create();
       res->rt[j] = rhi->newTextureRenderTarget({res->tex[j]}, QRhiTextureRenderTarget::PreserveColorContents);
       if (j == 0) {

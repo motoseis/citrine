@@ -69,6 +69,10 @@ void RenderThread::DeferRhiResourceDeletion(const QVector<QRhiResource*>& resour
   }
 }
 
+QRhiTexture::Format RenderThread::IntermediateFormat() {
+  return amber::HighPrecisionIntermediates.load() ? QRhiTexture::RGBA16F : QRhiTexture::RGBA8;
+}
+
 void RenderThread::drainDeferredDeletes() {
   QMutexLocker lock(&deferred_delete_mutex_);
   qDeleteAll(deferred_delete_queue_);
@@ -191,12 +195,17 @@ void RenderThread::run() {
                                  rhi_->isTextureFormatSupported(QRhiTexture::RG16);
       qInfo() << "10-bit YUV decode supported:" << amber::Yuv10BitSupported.load();
 
+      // Compositing in RGBA16F needs the backend to render into it; otherwise every target stays RGBA8
+      amber::HighPrecisionIntermediates = rhi_->isTextureFormatSupported(QRhiTexture::RGBA16F);
+      qInfo() << "16-bit compositing targets:" << amber::HighPrecisionIntermediates.load();
+
       // Load core shaders from QRC
       passthroughVert_ = loadQsb(QStringLiteral(":/shaders/common.vert.qsb"));
       passthroughFrag_ = loadQsb(QStringLiteral(":/shaders/passthrough.frag.qsb"));
       blendingFrag_ = loadQsb(QStringLiteral(":/shaders/blending.frag.qsb"));
       premultiplyFrag_ = loadQsb(QStringLiteral(":/shaders/premultiply.frag.qsb"));
       yuvFrag_ = loadQsb(QStringLiteral(":/shaders/yuv2rgb.frag.qsb"));
+      resolveFrag_ = loadQsb(QStringLiteral(":/shaders/resolve8.frag.qsb"));
 
       // Sampler
       sampler_ = rhi_->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
@@ -217,7 +226,7 @@ void RenderThread::run() {
       // Create front buffers (double-buffered compositing targets)
       if (front_tex_[0] == nullptr) {
         for (int i = 0; i < 2; i++) {
-          front_tex_[i] = rhi_->newTexture(QRhiTexture::RGBA8, QSize(tex_width, tex_height),
+          front_tex_[i] = rhi_->newTexture(IntermediateFormat(), QSize(tex_width, tex_height),
                                            1, QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource);
           front_tex_[i]->create();
 
@@ -238,11 +247,22 @@ void RenderThread::run() {
           front_rt_clear_[i]->setRenderPassDescriptor(front_clear_rpd_);
           front_rt_clear_[i]->create();
         }
+
+        // 8-bit target for the readback; only needed when the compositing targets are 16-bit
+        if (IntermediateFormat() != QRhiTexture::RGBA8) {
+          resolve_tex_ = rhi_->newTexture(QRhiTexture::RGBA8, QSize(tex_width, tex_height),
+                                          1, QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource);
+          resolve_tex_->create();
+          resolve_rt_ = rhi_->newTextureRenderTarget({resolve_tex_});
+          resolve_rpd_ = resolve_rt_->newCompatibleRenderPassDescriptor();
+          resolve_rt_->setRenderPassDescriptor(resolve_rpd_);
+          resolve_rt_->create();
+        }
       }
 
       // Create back buffer (single — used for clip→main compositing)
       if (back_tex_ == nullptr) {
-        back_tex_ = rhi_->newTexture(QRhiTexture::RGBA8, QSize(tex_width, tex_height),
+        back_tex_ = rhi_->newTexture(IntermediateFormat(), QSize(tex_width, tex_height),
                                      1, QRhiTexture::RenderTarget);
         back_tex_->create();
         back_rt_ = rhi_->newTextureRenderTarget({back_tex_});
@@ -321,6 +341,7 @@ void RenderThread::paint() {
   params.blendingFrag = blendingFrag_;
   params.premultiplyFrag = premultiplyFrag_;
   params.yuvFrag = yuvFrag_;
+  params.resolveFrag = resolveFrag_;
 
   params.main_tex = front_tex_[active_idx];
   params.main_target = front_rt_[active_idx];
@@ -336,11 +357,18 @@ void RenderThread::paint() {
   amber::rendering::compose_sequence(params);
   gizmos = params.gizmos;  // nulled by compose_sequence if clip wasn't rendered
 
+  // With 16-bit compositing targets the readback reads an 8-bit copy made here (with dither)
+  QRhiTexture* readback_tex = front_tex_[active_idx];
+  if (resolve_tex_ != nullptr) {
+    amber::rendering::resolve_to_8bit(params, front_tex_[active_idx], resolve_rt_, resolve_rpd_);
+    readback_tex = resolve_tex_;
+  }
+
   // CPU readback
   {
     QRhiReadbackResult readback;
     QRhiResourceUpdateBatch* u = rhi_->nextResourceUpdateBatch();
-    u->readBackTexture(QRhiReadbackDescription(front_tex_[active_idx]), &readback);
+    u->readBackTexture(QRhiReadbackDescription(readback_tex), &readback);
     QColor clearColor(0, 0, 0, 0);
     cb->beginPass(front_rt_[active_idx], clearColor, {1.0f, 0});
     cb->endPass(u);
@@ -509,6 +537,12 @@ void RenderThread::delete_buffers() {
   back_tex_ = nullptr;
   delete back_rpd_;
   back_rpd_ = nullptr;
+  delete resolve_rt_;
+  resolve_rt_ = nullptr;
+  delete resolve_tex_;
+  resolve_tex_ = nullptr;
+  delete resolve_rpd_;
+  resolve_rpd_ = nullptr;
 }
 
 void RenderThread::delete_ctx() {

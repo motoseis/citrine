@@ -598,7 +598,7 @@ bool Clip::Retrieve(QRhi* rhi, QRhiCommandBuffer* cb, ComposeSequenceParams* par
           yuv_tex_v->create();
         }
         if (yuv_converted_tex == nullptr) {
-          yuv_converted_tex = rhi->newTexture(QRhiTexture::RGBA8, QSize(w, h),
+          yuv_converted_tex = rhi->newTexture(RenderThread::IntermediateFormat(), QSize(w, h),
                                               1, QRhiTexture::RenderTarget);
           yuv_converted_tex->create();
           yuv_rt = rhi->newTextureRenderTarget({yuv_converted_tex});

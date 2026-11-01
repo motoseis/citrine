@@ -77,6 +77,9 @@ public:
   static void DeferRhiResourceDeletion(QRhiResource* res);
   static void DeferRhiResourceDeletion(const QVector<QRhiResource*>& resources);
 
+  // Format for GPU compositing targets: RGBA16F when the backend supports it, RGBA8 otherwise
+  static QRhiTexture::Format IntermediateFormat();
+
 public slots:
   void delete_ctx();
 signals:
@@ -101,6 +104,7 @@ private:
   QShader blendingFrag_;
   QShader premultiplyFrag_;
   QShader yuvFrag_;
+  QShader resolveFrag_;
 
   QRhiSampler* sampler_{nullptr};
 
@@ -119,6 +123,11 @@ private:
   QRhiTexture* back_tex_{nullptr};
   QRhiTextureRenderTarget* back_rt_{nullptr};
   QRhiRenderPassDescriptor* back_rpd_{nullptr};
+
+  // 8-bit copy of the final frame for the CPU readback (only used with RGBA16F intermediates)
+  QRhiTexture* resolve_tex_{nullptr};
+  QRhiTextureRenderTarget* resolve_rt_{nullptr};
+  QRhiRenderPassDescriptor* resolve_rpd_{nullptr};
 
   QWaitCondition wait_cond_;
   QMutex wait_lock_;
