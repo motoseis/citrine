@@ -186,6 +186,11 @@ void RenderThread::run() {
       qInfo() << "QRhi initialized, backend:" << rhi_->backendName()
               << "driver:" << rhi_->driverInfo().deviceName;
 
+      // 10-bit YUV planes are uploaded as 16-bit textures; some GL ES drivers can't sample them
+      amber::Yuv10BitSupported = rhi_->isTextureFormatSupported(QRhiTexture::R16) &&
+                                 rhi_->isTextureFormatSupported(QRhiTexture::RG16);
+      qInfo() << "10-bit YUV decode supported:" << amber::Yuv10BitSupported.load();
+
       // Load core shaders from QRC
       passthroughVert_ = loadQsb(QStringLiteral(":/shaders/common.vert.qsb"));
       passthroughFrag_ = loadQsb(QStringLiteral(":/shaders/passthrough.frag.qsb"));

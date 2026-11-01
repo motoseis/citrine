@@ -23,6 +23,8 @@
 
 #include <QString>
 
+#include <atomic>
+
 #include "core/style.h"
 
 namespace amber {
@@ -763,6 +765,9 @@ struct RuntimeConfig {
 namespace amber {
 extern Config CurrentConfig;
 extern RuntimeConfig CurrentRuntimeConfig;
+// Set by the render thread once QRhi is up: true when the backend can sample 16-bit R/RG textures,
+// which the 10-bit YUV upload path needs. Until then the decoder stays on 8-bit formats.
+extern std::atomic_bool Yuv10BitSupported;
 }  // namespace amber
 
 #endif  // CONFIG_H

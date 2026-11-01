@@ -557,27 +557,44 @@ bool Clip::Retrieve(QRhi* rhi, QRhiCommandBuffer* cb, ComposeSequenceParams* par
     if (frame != nullptr && cacher.queue()->contains(frame)) {
       bool is_yuv420p = (frame->format == AV_PIX_FMT_YUV420P);
       bool is_nv12 = (frame->format == AV_PIX_FMT_NV12);
+      bool is_yuv420p10 = (frame->format == AV_PIX_FMT_YUV420P10LE);
+      bool is_p010 = (frame->format == AV_PIX_FMT_P010LE);
+      bool is_10bit = is_yuv420p10 || is_p010;
+      // Chroma planes: NV12/P010 interleave U and V in one texture, YUV420P keeps them separate
+      bool interleaved_uv = is_nv12 || is_p010;
 
-      if (rhi != nullptr && (is_yuv420p || is_nv12)) {
+      if (rhi != nullptr && (is_yuv420p || is_nv12 || is_10bit)) {
         // GPU YUV->RGB path: upload plane textures and convert via shader
         int w = cacher.media_width();
         int h = cacher.media_height();
 
-        // Create/recreate plane textures if needed
+        // Plane texture formats depend on the source format. If it changed mid-clip (8-bit to 10-bit,
+        // or NV12 to planar), the old textures are the wrong shape, so queue them for deletion.
+        if (yuv_plane_format != frame->format) {
+          QVector<QRhiResource*> stale_planes;
+          if (yuv_tex_y) stale_planes.append(yuv_tex_y);
+          if (yuv_tex_u) stale_planes.append(yuv_tex_u);
+          if (yuv_tex_v) stale_planes.append(yuv_tex_v);
+          RenderThread::DeferRhiResourceDeletion(stale_planes);
+          yuv_tex_y = nullptr;
+          yuv_tex_u = nullptr;
+          yuv_tex_v = nullptr;
+          yuv_plane_format = static_cast<AVPixelFormat>(frame->format);
+        }
+
+        // Create/recreate plane textures if needed. 10-bit samples are 16-bit words (10 significant bits).
+        QRhiTexture::Format plane_fmt = is_10bit ? QRhiTexture::R16 : QRhiTexture::R8;
+        QRhiTexture::Format interleaved_fmt = is_10bit ? QRhiTexture::RG16 : QRhiTexture::RG8;
         if (yuv_tex_y == nullptr) {
-          yuv_tex_y = rhi->newTexture(QRhiTexture::R8, QSize(w, h));
+          yuv_tex_y = rhi->newTexture(plane_fmt, QSize(w, h));
           yuv_tex_y->create();
         }
         if (yuv_tex_u == nullptr) {
-          if (is_nv12) {
-            yuv_tex_u = rhi->newTexture(QRhiTexture::RG8, QSize(w / 2, h / 2));
-          } else {
-            yuv_tex_u = rhi->newTexture(QRhiTexture::R8, QSize(w / 2, h / 2));
-          }
+          yuv_tex_u = rhi->newTexture(interleaved_uv ? interleaved_fmt : plane_fmt, QSize(w / 2, h / 2));
           yuv_tex_u->create();
         }
-        if (yuv_tex_v == nullptr && is_yuv420p) {
-          yuv_tex_v = rhi->newTexture(QRhiTexture::R8, QSize(w / 2, h / 2));
+        if (yuv_tex_v == nullptr && !interleaved_uv) {
+          yuv_tex_v = rhi->newTexture(plane_fmt, QSize(w / 2, h / 2));
           yuv_tex_v->create();
         }
         if (yuv_converted_tex == nullptr) {
@@ -605,7 +622,7 @@ bool Clip::Retrieve(QRhi* rhi, QRhiCommandBuffer* cb, ComposeSequenceParams* par
         // U/UV plane
         {
           int uv_h = h / 2;
-          if (is_nv12) {
+          if (interleaved_uv) {
             QByteArray uvData(reinterpret_cast<const char*>(frame->data[1]), frame->linesize[1] * uv_h);
             QRhiTextureSubresourceUploadDescription desc(uvData);
             desc.setSourceSize(QSize(w / 2, uv_h));
@@ -620,8 +637,8 @@ bool Clip::Retrieve(QRhi* rhi, QRhiCommandBuffer* cb, ComposeSequenceParams* par
           }
         }
 
-        // V plane (YUV420P only)
-        if (is_yuv420p) {
+        // V plane (planar formats only)
+        if (!interleaved_uv) {
           int v_h = h / 2;
           QByteArray vData(reinterpret_cast<const char*>(frame->data[2]), frame->linesize[2] * v_h);
           QRhiTextureSubresourceUploadDescription desc(vData);
@@ -632,7 +649,8 @@ bool Clip::Retrieve(QRhi* rhi, QRhiCommandBuffer* cb, ComposeSequenceParams* par
 
         // YUV->RGB conversion pass (dedicated buffers to avoid shared dynamic buffer hazard)
         {
-          int format_type = is_nv12 ? 1 : 0;
+          // Must match format_type in shaders/yuv2rgb.frag
+          int format_type = interleaved_uv ? (is_10bit ? 3 : 1) : (is_10bit ? 2 : 0);
 
           // Determine YUV color space from decoded frame metadata
           int color_space_val = 0;  // 0 = BT.709 (default)

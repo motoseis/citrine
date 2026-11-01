@@ -257,6 +257,10 @@ void Cacher::openWorkerVideoFilter(const FootageStream* ms) {
     char fmt_args[100];
     if (clip->NeedsCpuRgba()) {
       snprintf(fmt_args, sizeof(fmt_args), "pix_fmts=%s", av_get_pix_fmt_name(kDestPixFmt));
+    } else if (amber::Yuv10BitSupported.load()) {
+      // 10-bit planar (yuv420p10le) and semi-planar (p010le) pass through untouched for the GPU path
+      snprintf(fmt_args, sizeof(fmt_args), "pix_fmts=yuv420p|nv12|yuv420p10le|p010le|%s",
+               av_get_pix_fmt_name(kDestPixFmt));
     } else {
       snprintf(fmt_args, sizeof(fmt_args), "pix_fmts=yuv420p|nv12|%s", av_get_pix_fmt_name(kDestPixFmt));
     }

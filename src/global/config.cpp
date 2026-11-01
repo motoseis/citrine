@@ -30,6 +30,7 @@
 
 Config amber::CurrentConfig;
 RuntimeConfig amber::CurrentRuntimeConfig;
+std::atomic_bool amber::Yuv10BitSupported{false};
 
 namespace {
 

@@ -175,6 +175,7 @@ public:
   QRhiTexture* yuv_tex_y{nullptr};
   QRhiTexture* yuv_tex_u{nullptr};
   QRhiTexture* yuv_tex_v{nullptr};
+  AVPixelFormat yuv_plane_format{AV_PIX_FMT_NONE};  // source format the plane textures were created for
   QRhiTexture* yuv_converted_tex{nullptr};
   QRhiTextureRenderTarget* yuv_rt{nullptr};
   QRhiRenderPassDescriptor* yuv_rpd{nullptr};
