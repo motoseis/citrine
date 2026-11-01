@@ -342,8 +342,11 @@ void amber::rendering::resolve_to_8bit(ComposeSequenceParams& params, QRhiTextur
   QMatrix4x4 mvp;
   mvp.ortho(-1, 1, -1, 1, -1, 1);
 
-  // No fragment uniforms: the noise is derived from the pixel position inside the shader
-  rhi_blit(params, dst, rpd, src, params.passthroughVert, params.resolveFrag, mvp, QByteArray(), 0);
+  // No fragment uniforms: the noise is derived from the pixel position inside the shader.
+  // skipClipSpaceCorr keeps the image orientation: the readback expects the frame as composited, and the
+  // full correction would flip it vertically.
+  rhi_blit(params, dst, rpd, src, params.passthroughVert, params.resolveFrag, mvp, QByteArray(), 0, 1, nullptr,
+           nullptr, true);
 }
 
 // Helper: create clip's ping-pong QRhiTexture + render target pairs (replaces QOpenGLFramebufferObject)
