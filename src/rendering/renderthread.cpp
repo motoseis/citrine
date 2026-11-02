@@ -357,9 +357,10 @@ void RenderThread::paint() {
   amber::rendering::compose_sequence(params);
   gizmos = params.gizmos;  // nulled by compose_sequence if clip wasn't rendered
 
-  // With 16-bit compositing targets the readback reads an 8-bit copy made here (with dither)
+  // A 16-bit export reads the float target as it is. Everything else reads the 8-bit copy made here (with dither)
+  const bool export16 = pixel_buffer != nullptr && pixel_buffer_16bit;
   QRhiTexture* readback_tex = front_tex_[active_idx];
-  if (resolve_tex_ != nullptr) {
+  if (resolve_tex_ != nullptr && !export16) {
     amber::rendering::resolve_to_8bit(params, front_tex_[active_idx], resolve_rt_, resolve_rpd_);
     readback_tex = resolve_tex_;
   }
@@ -381,10 +382,14 @@ void RenderThread::paint() {
     // Drain deferred deletes from other threads (e.g. Clip::Close on main thread)
     drainDeferredDeletes();
 
-    QByteArray& dst = cpu_frame_[active_idx];
-    dst = readback.data;
-    cpu_frame_w_[active_idx] = readback.pixelSize.width();
-    cpu_frame_h_[active_idx] = readback.pixelSize.height();
+    if (export16) {
+      export_frame16_ = readback.data;
+    } else {
+      QByteArray& dst = cpu_frame_[active_idx];
+      dst = readback.data;
+      cpu_frame_w_[active_idx] = readback.pixelSize.width();
+      cpu_frame_h_[active_idx] = readback.pixelSize.height();
+    }
   }
 
   active_mutex.unlock();
@@ -422,11 +427,12 @@ void RenderThread::paint() {
 
   // Export pixel buffer if requested
   if (pixel_buffer != nullptr) {
-    QByteArray& data = cpu_frame_[active_idx];
+    QByteArray& data = export16 ? export_frame16_ : cpu_frame_[active_idx];
     if (!data.isEmpty()) {
+      const int bytes_per_pixel = export16 ? 8 : 4;  // half-float RGBA or 8-bit RGBA
       int copy_width = pixel_buffer_linesize == 0 ? tex_width : pixel_buffer_linesize;
-      int row_bytes = copy_width * 4;
-      int src_stride = tex_width * 4;
+      int row_bytes = copy_width * bytes_per_pixel;
+      int src_stride = tex_width * bytes_per_pixel;
       if (row_bytes > src_stride) {
         // Per-row copy with padding zero-fill when destination has padding
         const char* src = data.constData();
@@ -442,6 +448,7 @@ void RenderThread::paint() {
       }
     }
     pixel_buffer = nullptr;
+    pixel_buffer_16bit = false;
   }
 }
 
@@ -451,7 +458,8 @@ void RenderThread::start_render(Sequence* s,
                                 void* pixels,
                                 int pixel_linesize,
                                 int idivider,
-                                bool scrubbing) {
+                                bool scrubbing,
+                                bool half_float_pixels) {
   // Apply preview resolution divider for playback (not export)
   if (pixels == nullptr) {
     divider_ = qMax(1, idivider);
@@ -487,6 +495,7 @@ void RenderThread::start_render(Sequence* s,
   if (pixels != nullptr) {
     pixel_buffer = pixels;
     pixel_buffer_linesize = pixel_linesize;
+    pixel_buffer_16bit = half_float_pixels;
   }
 
   queued = true;

@@ -65,7 +65,8 @@ public:
                     void* pixels = nullptr,
                     int pixel_linesize = 0,
                     int idivider = 0,
-                    bool scrubbing = false);
+                    bool scrubbing = false,
+                    bool half_float_pixels = false);
   bool did_texture_fail();
   // True once QRhi creation has failed. ready() is still emitted then, so a waiting ExportThread wakes up.
   bool rhi_failed() const;
@@ -148,6 +149,9 @@ private:
   QString save_fn;
   void* pixel_buffer{nullptr};
   int pixel_buffer_linesize{0};
+  // Export buffer holds half-float RGBA (8 bytes per pixel) instead of 8-bit RGBA
+  bool pixel_buffer_16bit{false};
+  QByteArray export_frame16_;  // readback for 16-bit exports; kept apart from cpu_frame_ so the viewer keeps 8-bit
 
   // CPU bridge: double-buffered pixel readback
   QByteArray cpu_frame_[2];

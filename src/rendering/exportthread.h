@@ -114,6 +114,8 @@ private:
   SwsContext* sws_ctx{nullptr};
   // Software format frames are converted to before encoding; VAAPI encoders take it from GPU surfaces instead
   AVPixelFormat sw_pix_fmt{AV_PIX_FMT_NONE};
+  // True when the chosen output format is 10-bit or deeper: frames are rendered at 16 bits per channel
+  bool video_10bit_{false};
   AVBufferRef* hw_device_ctx{nullptr};
   AVBufferRef* hw_frames_ctx{nullptr};
   AVStream* audio_stream{nullptr};

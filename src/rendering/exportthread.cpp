@@ -32,9 +32,11 @@ extern "C" {
 #include <QApplication>
 #include <QDateTime>
 #include <QFile>
+#include <QFloat16>
 #include <QPainter>
 #include <QtMath>
 
+#include "global/config.h"
 #include "global/global.h"
 #include "engine/sequence.h"
 #include "core/appcontext.h"
@@ -46,6 +48,21 @@ extern "C" {
 #ifdef __GLIBC__
 #include <malloc.h>
 #endif
+
+// The 16-bit render target reads back as half-float RGBA. Rewrite each channel in place as an unsigned
+// 16-bit value (0-65535) so swscale can read the frame as RGBA64.
+static void half_float_to_unorm16(AVFrame* frame) {
+  const int channels = 4;
+  for (int y = 0; y < frame->height; y++) {
+    quint16* row = reinterpret_cast<quint16*>(frame->data[0] + y * frame->linesize[0]);
+    for (int i = 0; i < frame->width * channels; i++) {
+      qfloat16 half;
+      memcpy(&half, &row[i], sizeof(quint16));
+      float value = qBound(0.0f, float(half), 1.0f);
+      row[i] = quint16(value * 65535.0f + 0.5f);
+    }
+  }
+}
 
 ExportThread::ExportThread(const ExportParams &params,
                            const VideoCodecParams& vparams,
@@ -135,9 +152,18 @@ bool ExportThread::SetupVideo() {
   vcodec_ctx->width = params_.video_width;
   vcodec_ctx->height = params_.video_height;
   vcodec_ctx->sample_aspect_ratio = {1, 1};
-  // VAAPI encoders take GPU surfaces in NV12; frames are uploaded from a software NV12 frame
+  // 10-bit (or deeper) output is rendered at 16 bits per channel, so it needs 16-bit render targets
+  AVPixelFormat encoder_pix_fmt = static_cast<AVPixelFormat>(vcodec_params_.pix_fmt);
+  const AVPixFmtDescriptor* pix_desc = av_pix_fmt_desc_get(encoder_pix_fmt);
+  video_10bit_ = pix_desc != nullptr && pix_desc->comp[0].depth > 8;
+  if (video_10bit_ && !amber::HighPrecisionIntermediates.load()) {
+    export_error = tr("10-bit export needs 16-bit render targets, which this graphics backend does not support");
+    return false;
+  }
+
+  // VAAPI encoders take GPU surfaces (NV12, or P010 for 10-bit); frames are uploaded from a software frame
   bool vaapi = params_.video_encoder.endsWith("_vaapi");
-  sw_pix_fmt = vaapi ? AV_PIX_FMT_NV12 : static_cast<AVPixelFormat>(vcodec_params_.pix_fmt);
+  sw_pix_fmt = vaapi ? (video_10bit_ ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12) : encoder_pix_fmt;
   vcodec_ctx->pix_fmt = vaapi ? AV_PIX_FMT_VAAPI : sw_pix_fmt;
   vcodec_ctx->framerate = av_d2q(params_.video_frame_rate, INT_MAX);
   if (params_.video_compression_type == COMPRESSION_TYPE_CBR) {
@@ -249,7 +275,7 @@ bool ExportThread::SetupVideo() {
     return false;
   }
   video_frame = av_frame_alloc();
-  video_frame->format = AV_PIX_FMT_RGBA;
+  video_frame->format = video_10bit_ ? AV_PIX_FMT_RGBA64LE : AV_PIX_FMT_RGBA;
   video_frame->width = amber::ActiveSequence->width;
   video_frame->height = amber::ActiveSequence->height;
   ret = av_frame_get_buffer(video_frame, 0);
@@ -265,7 +291,7 @@ bool ExportThread::SetupVideo() {
   sws_ctx = sws_getContext(
         amber::ActiveSequence->width,
         amber::ActiveSequence->height,
-        AV_PIX_FMT_RGBA,
+        video_10bit_ ? AV_PIX_FMT_RGBA64LE : AV_PIX_FMT_RGBA,
         params_.video_width,
         params_.video_height,
         sw_pix_fmt,
@@ -515,7 +541,8 @@ bool ExportThread::Export()
       do {
         // TODO optimize by rendering the next frame while encoding the last
         render_complete_ = false;
-        renderer->start_render(amber::ActiveSequence.get(), 1, nullptr, video_frame->data[0], video_frame->linesize[0]/4, 0);
+        renderer->start_render(amber::ActiveSequence.get(), 1, nullptr, video_frame->data[0],
+                               video_frame->linesize[0] / (video_10bit_ ? 8 : 4), 0, false, video_10bit_);
 
         // Wait for RenderThread to return (predicate guards against lost wakeup)
         while (!render_complete_ && !interrupt_) {
@@ -560,6 +587,11 @@ bool ExportThread::Export()
       // - Perhaps this is the intended way to use swscale, but it seems inefficient.
       // - Anyway, here we are.
       //
+
+      // The 16-bit target reads back as half floats; turn them into 16-bit integers for swscale
+      if (video_10bit_) {
+        half_float_to_unorm16(video_frame);
+      }
 
       // Construct destination pixel format frame
       sws_frame = av_frame_alloc();
