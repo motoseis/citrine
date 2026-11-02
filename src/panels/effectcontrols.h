@@ -25,6 +25,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QScrollArea>
+#include <QTabBar>
 #include <QScrollBar>
 #include <QSplitter>
 #include <QUndoCommand>
@@ -145,6 +146,9 @@ class EffectControls : public Panel {
   KeyframeView* keyframeView;
   QWidget* ve_header_;  // video effects header with Add Effect; fixed above the scrolling area
   QWidget* ae_header_;  // audio effects header; fixed above the scrolling area, under the video header
+  QTabBar* effect_tabs_;  // Video / Audio: shows one section of effects at a time
+  void update_effect_tabs();
+  void refresh_keyframe_effects();
   QWidget* vcontainer;
   QWidget* acontainer;
 };

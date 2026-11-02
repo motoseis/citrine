@@ -33,8 +33,15 @@ public:
 
   virtual void LoadLayoutState(const QByteArray& data);
   virtual QByteArray SaveLayoutState();
+
+  // Docked panels hide their title bar, since the dock tab already shows the name. Floating panels keep it
+  // so the window can still be moved. Call this after unlocking the panels.
+  void UpdateTitleBar();
 protected:
   void changeEvent(QEvent* e) override;
+
+private:
+  QWidget* blank_title_bar_{nullptr};
 };
 
 namespace amber {

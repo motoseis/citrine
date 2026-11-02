@@ -26,10 +26,18 @@
 QVector<Panel*> amber::panels;
 
 Panel::Panel(QWidget *parent) : QDockWidget (parent) {
+  blank_title_bar_ = new QWidget(this);
+  connect(this, &QDockWidget::topLevelChanged, this, [this](bool) { UpdateTitleBar(); });
+  UpdateTitleBar();
+
 //  setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
 //  setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
   amber::panels.append(this);
+}
+
+void Panel::UpdateTitleBar() {
+  setTitleBarWidget(isFloating() ? nullptr : blank_title_bar_);
 }
 
 Panel::~Panel()

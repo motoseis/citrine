@@ -1511,8 +1511,8 @@ void MainWindow::set_panels_locked(bool locked) {
       // re-enable moving on QDockWidget
       panel->setFeatures(panel->features() | QDockWidget::DockWidgetMovable);
 
-      // set the "custom" titlebar to null so the default gets restored
-      panel->setTitleBarWidget(nullptr);
+      // restore the title bar that matches the panel's docked state (hidden when docked)
+      panel->UpdateTitleBar();
     }
   }
 

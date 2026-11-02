@@ -258,8 +258,9 @@ void EffectControls::Clear(bool clear_cache) {
     delete open_effect;
   }
   open_effects_.clear();
-  keyframeView->SetEffects(open_effects_);
+  refresh_keyframe_effects();
 
+  effect_tabs_->setVisible(false);
   vcontainer->setVisible(false);
   ve_header_->setVisible(false);
   acontainer->setVisible(false);
@@ -380,6 +381,7 @@ void EffectControls::setup_ui() {
   lblVideoEffects->setFont(font);
   lblVideoEffects->setAlignment(Qt::AlignCenter);
   veHeaderLayout->addWidget(lblVideoEffects);
+  lblVideoEffects->setVisible(false);  // the Video tab already names this section
 
   veHeaderLayout->addStretch();
 
@@ -423,6 +425,7 @@ void EffectControls::setup_ui() {
   lblAudioEffects->setFont(font);
   lblAudioEffects->setAlignment(Qt::AlignCenter);
   aeHeaderLayout->addWidget(lblAudioEffects);
+  lblAudioEffects->setVisible(false);  // the Audio tab already names this section
 
   aeHeaderLayout->addStretch();
 
@@ -451,6 +454,12 @@ void EffectControls::setup_ui() {
   QVBoxLayout* effects_panel_layout = new QVBoxLayout(effects_panel);
   effects_panel_layout->setSpacing(0);
   effects_panel_layout->setContentsMargins(0, 0, 0, 0);
+  effect_tabs_ = new QTabBar();
+  effect_tabs_->addTab(tr("Video"));
+  effect_tabs_->addTab(tr("Audio"));
+  effect_tabs_->setVisible(false);
+  connect(effect_tabs_, &QTabBar::currentChanged, this, [this]() { update_effect_tabs(); });
+  effects_panel_layout->addWidget(effect_tabs_);
   effects_panel_layout->addWidget(ve_header_);
   effects_panel_layout->addWidget(ae_header_);
   effects_panel_layout->addWidget(scrollArea);
@@ -633,6 +642,43 @@ void EffectControls::DeleteSelectedEffects() {
   }
 }
 
+// Shows the section for the selected tab (Video or Audio) and hides the other one, for the clips selected
+void EffectControls::update_effect_tabs() {
+  bool has_video = false;
+  bool has_audio = false;
+  for (auto c : selected_clips_) {
+    if (c->track() < 0) {
+      has_video = true;
+    } else {
+      has_audio = true;
+    }
+  }
+
+  bool show_video = effect_tabs_->currentIndex() == 0;
+  effect_tabs_->setVisible(has_video || has_audio);
+
+  vcontainer->setVisible(has_video && show_video);
+  ve_header_->setVisible(has_video && show_video);
+  acontainer->setVisible(has_audio && !show_video);
+  ae_header_->setVisible(has_audio && !show_video);
+
+  refresh_keyframe_effects();
+}
+
+// The keyframe view only lists the effects in the section on screen, so its rows line up with them
+void EffectControls::refresh_keyframe_effects() {
+  bool show_video = effect_tabs_->currentIndex() == 0;
+
+  QVector<EffectUI*> shown;
+  for (auto ui : open_effects_) {
+    bool is_audio = ui->GetEffect()->meta->type == EFFECT_TYPE_AUDIO;
+    if (is_audio == !show_video) {
+      shown.append(ui);
+    }
+  }
+  keyframeView->SetEffects(shown);
+}
+
 void EffectControls::Reload() {
   Clear(false);
   Load();
@@ -681,11 +727,9 @@ void EffectControls::Load() {
 
     if (c->track() < 0) {
       vcontainer->setVisible(true);
-      ve_header_->setVisible(true);
       layout = video_effect_layout;
     } else {
       acontainer->setVisible(true);
-      ae_header_->setVisible(true);
       layout = audio_effect_layout;
     }
 
@@ -740,7 +784,7 @@ void EffectControls::Load() {
     }
   }
 
-  keyframeView->SetEffects(open_effects_);
+  update_effect_tabs();
 
   if (selected_clips_.size() > 0) {
     keyframeView->setEnabled(true);
