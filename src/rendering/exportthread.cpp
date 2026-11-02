@@ -57,6 +57,11 @@ AVPixelFormat FirstTenBitPixFmt(const AVCodec* codec) {
     return AV_PIX_FMT_NONE;
   }
 
+  // VAAPI encoders list only the hardware surface format, so report the software format the export feeds them
+  if (strstr(codec->name, "_vaapi") != nullptr) {
+    return codec->id == AV_CODEC_ID_HEVC ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NONE;
+  }
+
   // Exactly 10 bits is preferred; 9, 11 and 12 bits are used only when the encoder has nothing else
   AVPixelFormat fallback = AV_PIX_FMT_NONE;
   auto consider = [&fallback](AVPixelFormat fmt) {
