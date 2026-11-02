@@ -52,16 +52,18 @@ void FontField::UpdateWidgetValue(QWidget *widget, double timecode)
 
   ComboBoxEx* cb = static_cast<ComboBoxEx*>(widget);
 
-  for (int i=0;i<font_list.size();i++) {
-    if (font_list.at(i) == data) {
-      cb->blockSignals(true);
-      cb->setCurrentIndex(i);
-      cb->blockSignals(false);
-      return;
-    }
+  // A saved font that isn't installed here (e.g. the project came from another machine) is added to the list,
+  // so it stays selected instead of logging a warning on every refresh
+  if (!font_list.contains(data.toString())) {
+    font_list.append(data.toString());
+  }
+  for (int i = cb->count(); i < font_list.size(); i++) {
+    cb->addItem(font_list.at(i));
   }
 
-  qWarning() << "Failed to set FontField value from data";
+  cb->blockSignals(true);
+  cb->setCurrentIndex(font_list.indexOf(data.toString()));
+  cb->blockSignals(false);
 }
 
 void FontField::UpdateFromWidget(const QString& s)
