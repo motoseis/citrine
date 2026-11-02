@@ -143,6 +143,8 @@ class EffectControls : public Panel {
   EffectsArea* effects_area;
   QScrollArea* scrollArea;
   KeyframeView* keyframeView;
+  QWidget* ve_header_;  // video effects header with Add Effect; fixed above the scrolling area
+  QWidget* ae_header_;  // audio effects header; fixed above the scrolling area, under the video header
   QWidget* vcontainer;
   QWidget* acontainer;
 };

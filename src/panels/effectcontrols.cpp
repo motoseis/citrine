@@ -261,7 +261,9 @@ void EffectControls::Clear(bool clear_cache) {
   keyframeView->SetEffects(open_effects_);
 
   vcontainer->setVisible(false);
+  ve_header_->setVisible(false);
   acontainer->setVisible(false);
+  ae_header_->setVisible(false);
   headers->setVisible(false);
   keyframeView->setEnabled(false);
 
@@ -353,6 +355,8 @@ void EffectControls::setup_ui() {
   vcontainerLayout->setContentsMargins(0, 0, 0, 0);
 
   QWidget* veHeader = new QWidget();
+  ve_header_ = veHeader;
+  ve_header_->setVisible(false);
   veHeader->setObjectName(QStringLiteral("veHeader"));
   veHeader->setStyleSheet(QLatin1String("#veHeader { background: rgba(0, 0, 0, 0.25); }"));
 
@@ -384,7 +388,6 @@ void EffectControls::setup_ui() {
   connect(btnAddVideoTransition, &QPushButton::clicked, this, &EffectControls::video_transition_click);
   veHeaderLayout->addWidget(btnAddVideoTransition);
 
-  vcontainerLayout->addWidget(veHeader);
 
   video_effect_area = new QWidget();
   video_effect_layout = new QVBoxLayout(video_effect_area);
@@ -400,6 +403,8 @@ void EffectControls::setup_ui() {
   acontainerLayout->setSpacing(0);
   acontainerLayout->setContentsMargins(0, 0, 0, 0);
   QWidget* aeHeader = new QWidget();
+  ae_header_ = aeHeader;
+  ae_header_->setVisible(false);
   aeHeader->setObjectName(QStringLiteral("aeHeader"));
   aeHeader->setStyleSheet(QLatin1String("#aeHeader { background: rgba(0, 0, 0, 0.25); }"));
 
@@ -426,7 +431,6 @@ void EffectControls::setup_ui() {
   connect(btnAddAudioTransition, &QPushButton::clicked, this, &EffectControls::audio_transition_click);
   aeHeaderLayout->addWidget(btnAddAudioTransition);
 
-  acontainerLayout->addWidget(aeHeader);
 
   audio_effect_area = new QWidget();
   audio_effect_layout = new QVBoxLayout(audio_effect_area);
@@ -442,7 +446,15 @@ void EffectControls::setup_ui() {
   scrollAreaLayout->addWidget(effects_area);
 
   scrollArea->setWidget(scrollAreaWidgetContents);
-  splitter->addWidget(scrollArea);
+  // The video effects header stays fixed above the scrolling effects, so Add Effect is always reachable
+  QWidget* effects_panel = new QWidget();
+  QVBoxLayout* effects_panel_layout = new QVBoxLayout(effects_panel);
+  effects_panel_layout->setSpacing(0);
+  effects_panel_layout->setContentsMargins(0, 0, 0, 0);
+  effects_panel_layout->addWidget(ve_header_);
+  effects_panel_layout->addWidget(ae_header_);
+  effects_panel_layout->addWidget(scrollArea);
+  splitter->addWidget(effects_panel);
 
   QWidget* keyframeArea = new QWidget();
 
@@ -669,9 +681,11 @@ void EffectControls::Load() {
 
     if (c->track() < 0) {
       vcontainer->setVisible(true);
+      ve_header_->setVisible(true);
       layout = video_effect_layout;
     } else {
       acontainer->setVisible(true);
+      ae_header_->setVisible(true);
       layout = audio_effect_layout;
     }
 
