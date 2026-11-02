@@ -535,6 +535,7 @@ void ExportDialog::StartExport() {
       params.video_height = heightSpinbox->value();
       params.video_frame_rate = framerateSpinbox->value();
       params.video_compression_type = compressionTypeCombobox->currentData().toInt();
+      params.video_10bit = ten_bit_checkbox->isChecked();
       params.video_bitrate = videobitrateSpinbox->value();
     }
     params.audio_enabled = audioGroupbox->isChecked();
@@ -642,6 +643,21 @@ void ExportDialog::update_progress_bar(int value, qint64 remaining_ms) {
 void ExportDialog::vcodec_changed(int index) {
   compressionTypeCombobox->clear();
 
+  // 10-bit output is offered for any codec whose encoder has a 10-bit pixel format
+  bool has_ten_bit = false;
+  if (vcodecCombobox->count() > 0) {
+    QString encoder_name = vcodecCombobox->itemData(index, Qt::UserRole + 1).toString();
+    const AVCodec* encoder = encoder_name.isEmpty() ? nullptr : avcodec_find_encoder_by_name(encoder_name.toUtf8().constData());
+    if (encoder == nullptr) {
+      encoder = avcodec_find_encoder(static_cast<AVCodecID>(vcodecCombobox->itemData(index).toInt()));
+    }
+    has_ten_bit = FirstTenBitPixFmt(encoder) != AV_PIX_FMT_NONE;
+  }
+  ten_bit_checkbox->setEnabled(has_ten_bit);
+  if (!has_ten_bit) {
+    ten_bit_checkbox->setChecked(false);
+  }
+
   if (vcodecCombobox->count() > 0) {
     if (vcodecCombobox->itemData(index) == AV_CODEC_ID_H264 || vcodecCombobox->itemData(index) == AV_CODEC_ID_H265) {
       compressionTypeCombobox->setEnabled(true);
@@ -654,8 +670,12 @@ void ExportDialog::vcodec_changed(int index) {
       compressionTypeCombobox->setEnabled(false);
     }
 
-    // set default pix_fmt for this codec
-    const AVCodec* codec_info = avcodec_find_encoder(static_cast<AVCodecID>(vcodecCombobox->itemData(index).toInt()));
+    // set default pix_fmt for this encoder (GPU encoders list their own formats, so use the chosen one)
+    QString encoder_name = vcodecCombobox->itemData(index, Qt::UserRole + 1).toString();
+    const AVCodec* codec_info = encoder_name.isEmpty() ? nullptr : avcodec_find_encoder_by_name(encoder_name.toUtf8().constData());
+    if (codec_info == nullptr) {
+      codec_info = avcodec_find_encoder(static_cast<AVCodecID>(vcodecCombobox->itemData(index).toInt()));
+    }
     if (codec_info == nullptr) {
       QMessageBox::critical(this, tr("Invalid Codec"),
                             tr("Failed to find a suitable encoder for this codec. Export will likely fail."));
@@ -730,7 +750,8 @@ void ExportDialog::comp_type_changed(int) {
 }
 
 void ExportDialog::open_advanced_video_dialog() {
-  AdvancedVideoDialog avd(this, static_cast<AVCodecID>(vcodecCombobox->currentData().toInt()), vcodec_params);
+  AdvancedVideoDialog avd(this, static_cast<AVCodecID>(vcodecCombobox->currentData().toInt()), vcodec_params,
+                          vcodecCombobox->currentData(Qt::UserRole + 1).toString());
   avd.exec();
 }
 
@@ -819,6 +840,12 @@ void ExportDialog::setup_ui() {
   QPushButton* advanced_video_button = new QPushButton(tr("Advanced"));
   connect(advanced_video_button, &QPushButton::clicked, this, &ExportDialog::open_advanced_video_dialog);
   videoGridLayout->addWidget(advanced_video_button, 7, 1);
+
+  ten_bit_checkbox = new QCheckBox(tr("10-bit"), videoGroupbox);
+  ten_bit_checkbox->setToolTip(tr("Encode 10 bits per channel for smoother gradients and grading. Available for codecs "
+                                  "that support 10-bit. Overrides the pixel format in Advanced settings."));
+  ten_bit_checkbox->setEnabled(false);
+  videoGridLayout->addWidget(ten_bit_checkbox, 7, 0, 1, 1);
 
   verticalLayout->addWidget(videoGroupbox);
 

@@ -59,6 +59,8 @@ struct ExportParams {
   double video_frame_rate;
   int video_compression_type;
   double video_bitrate;
+  // 10-bit output: the encoder's 10-bit pixel format is used instead of the one chosen in Advanced settings
+  bool video_10bit{false};
   bool audio_enabled;
   int audio_codec;
   int audio_sampling_rate;
@@ -71,6 +73,9 @@ struct VideoCodecParams {
   int pix_fmt;
   int threads;
 };
+
+// The first 10-bit pixel format (9 to 12 bits per component) the encoder accepts, or AV_PIX_FMT_NONE if it has none
+AVPixelFormat FirstTenBitPixFmt(const AVCodec* codec);
 
 class ExportThread : public QThread {
   Q_OBJECT

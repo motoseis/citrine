@@ -22,6 +22,7 @@
 #define EXPORTDIALOG_H
 
 #include <QDialog>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
@@ -230,6 +231,11 @@ private:
    * @brief ComboBox for the exported video codec
    */
   QComboBox* vcodecCombobox;
+
+  /**
+   * @brief Checkbox for 10-bit output. Only enabled for H.265; picks the 10-bit pixel format for the encoder.
+   */
+  QCheckBox* ten_bit_checkbox;
 
   /**
    * @brief ComboBox for the exported audio's codec

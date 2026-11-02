@@ -34,7 +34,8 @@ extern "C" {
 
 AdvancedVideoDialog::AdvancedVideoDialog(QWidget *parent,
                                          AVCodecID encoding_codec,
-                                         VideoCodecParams &iparams) :
+                                         VideoCodecParams &iparams,
+                                         const QString &encoder_name) :
   QDialog(parent),
   params_(iparams)
 {
@@ -43,8 +44,11 @@ AdvancedVideoDialog::AdvancedVideoDialog(QWidget *parent,
   // use variable for row to assist adding new fields to the grid layout
   int row = 0;
 
-  // get encoder information for this codec from FFmpeg
-  const AVCodec* codec_info = avcodec_find_encoder(static_cast<AVCodecID>(encoding_codec));
+  // get encoder information from FFmpeg: the chosen encoder if there is one, otherwise the codec's default
+  const AVCodec* codec_info = encoder_name.isEmpty() ? nullptr : avcodec_find_encoder_by_name(encoder_name.toUtf8().constData());
+  if (codec_info == nullptr) {
+    codec_info = avcodec_find_encoder(static_cast<AVCodecID>(encoding_codec));
+  }
 
   // set up grid layout for dialog
   QGridLayout* layout = new QGridLayout(this);

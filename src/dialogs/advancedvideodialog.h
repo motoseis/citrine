@@ -51,9 +51,12 @@ public:
    *
    * A VideoCodecParams struct containing the extra codec data.
    */
+  // encoder_name selects a specific encoder (e.g. "hevc_nvenc") so its pixel formats are listed;
+  // empty uses the codec's default encoder.
   AdvancedVideoDialog(QWidget* parent,
                       AVCodecID encoding_codec,
-                      VideoCodecParams& iparams);
+                      VideoCodecParams& iparams,
+                      const QString& encoder_name = QString());
 
 public slots:
   /**

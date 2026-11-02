@@ -49,6 +49,45 @@ extern "C" {
 #include <malloc.h>
 #endif
 
+AVPixelFormat FirstTenBitPixFmt(const AVCodec* codec) {
+  if (codec == nullptr) return AV_PIX_FMT_NONE;
+
+  // Hardware H.264 encoders list 10-bit formats but refuse to open them (only the software encoder does 10-bit H.264)
+  if (codec->id == AV_CODEC_ID_H264 && (strstr(codec->name, "_nvenc") != nullptr || strstr(codec->name, "_vaapi") != nullptr)) {
+    return AV_PIX_FMT_NONE;
+  }
+
+  // Exactly 10 bits is preferred; 9, 11 and 12 bits are used only when the encoder has nothing else
+  AVPixelFormat fallback = AV_PIX_FMT_NONE;
+  auto consider = [&fallback](AVPixelFormat fmt) {
+    const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(fmt);
+    if (desc == nullptr || desc->comp[0].depth <= 8 || desc->comp[0].depth > 12) return AV_PIX_FMT_NONE;
+    if (desc->comp[0].depth == 10) return fmt;
+    if (fallback == AV_PIX_FMT_NONE) fallback = fmt;
+    return AV_PIX_FMT_NONE;
+  };
+
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 0, 0)
+  const enum AVPixelFormat* fmts = nullptr;
+  int count = 0;
+  if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, (const void**)&fmts, &count) != 0 ||
+      fmts == nullptr) {
+    return AV_PIX_FMT_NONE;
+  }
+  for (int i = 0; i < count; i++) {
+    AVPixelFormat ten = consider(fmts[i]);
+    if (ten != AV_PIX_FMT_NONE) return ten;
+  }
+#else
+  if (codec->pix_fmts == nullptr) return AV_PIX_FMT_NONE;
+  for (int i = 0; codec->pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
+    AVPixelFormat ten = consider(codec->pix_fmts[i]);
+    if (ten != AV_PIX_FMT_NONE) return ten;
+  }
+#endif
+  return fallback;
+}
+
 // The 16-bit render target reads back as half-float RGBA. Rewrite each channel in place as an unsigned
 // 16-bit value (0-65535) so swscale can read the frame as RGBA64.
 static void half_float_to_unorm16(AVFrame* frame) {
@@ -152,8 +191,17 @@ bool ExportThread::SetupVideo() {
   vcodec_ctx->width = params_.video_width;
   vcodec_ctx->height = params_.video_height;
   vcodec_ctx->sample_aspect_ratio = {1, 1};
-  // 10-bit (or deeper) output is rendered at 16 bits per channel, so it needs 16-bit render targets
+  bool vaapi = params_.video_encoder.endsWith("_vaapi");
   AVPixelFormat encoder_pix_fmt = static_cast<AVPixelFormat>(vcodec_params_.pix_fmt);
+  if (params_.video_10bit) {
+    // The 10-bit switch uses the encoder's own 10-bit format, in place of the one set in Advanced settings
+    AVPixelFormat ten_bit = FirstTenBitPixFmt(vcodec);
+    if (ten_bit != AV_PIX_FMT_NONE) {
+      encoder_pix_fmt = ten_bit;
+    }
+  }
+
+  // 10-bit (or deeper) output is rendered at 16 bits per channel, so it needs 16-bit render targets
   const AVPixFmtDescriptor* pix_desc = av_pix_fmt_desc_get(encoder_pix_fmt);
   video_10bit_ = pix_desc != nullptr && pix_desc->comp[0].depth > 8;
   if (video_10bit_ && !amber::HighPrecisionIntermediates.load()) {
@@ -162,7 +210,6 @@ bool ExportThread::SetupVideo() {
   }
 
   // VAAPI encoders take GPU surfaces (NV12, or P010 for 10-bit); frames are uploaded from a software frame
-  bool vaapi = params_.video_encoder.endsWith("_vaapi");
   sw_pix_fmt = vaapi ? (video_10bit_ ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12) : encoder_pix_fmt;
   vcodec_ctx->pix_fmt = vaapi ? AV_PIX_FMT_VAAPI : sw_pix_fmt;
   vcodec_ctx->framerate = av_d2q(params_.video_frame_rate, INT_MAX);
