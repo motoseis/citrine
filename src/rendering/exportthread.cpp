@@ -93,8 +93,19 @@ AVPixelFormat FirstTenBitPixFmt(const AVCodec* codec) {
   return fallback;
 }
 
+// Hash of a pixel index, uniform in [0, 1)
+static float dither_noise(quint32 n) {
+  n ^= n >> 16;
+  n *= 0x7feb352dU;
+  n ^= n >> 15;
+  n *= 0x846ca68bU;
+  n ^= n >> 16;
+  return float(n & 0xFFFFFFU) / float(0x1000000U);
+}
+
 // The 16-bit render target reads back as half-float RGBA. Rewrite each channel in place as an unsigned
-// 16-bit value (0-65535) so swscale can read the frame as RGBA64.
+// 16-bit value (0-65535) so swscale can read the frame as RGBA64. Half an 8-bit step of noise is added first,
+// so an 8-bit source's steps become a dithered transition in the 10-bit output instead of hard bands.
 static void half_float_to_unorm16(AVFrame* frame) {
   const int channels = 4;
   for (int y = 0; y < frame->height; y++) {
@@ -102,7 +113,8 @@ static void half_float_to_unorm16(AVFrame* frame) {
     for (int i = 0; i < frame->width * channels; i++) {
       qfloat16 half;
       memcpy(&half, &row[i], sizeof(quint16));
-      float value = qBound(0.0f, float(half), 1.0f);
+      float noise = dither_noise(quint32(y) * quint32(frame->width * channels) + quint32(i)) - 0.5f;
+      float value = qBound(0.0f, float(half) + noise / 255.0f, 1.0f);
       row[i] = quint16(value * 65535.0f + 0.5f);
     }
   }
