@@ -118,3 +118,13 @@ v1.09.01: 261022
 v1.09.02: 261022
 	1. Fixed the Linux AppImage build, which failed to compile the VAAPI proxy code against the FFmpeg headers in Ubuntu 24.04.
 	2. Text effect controls are grouped into sections with spacer rows between them. Reveal sits below the animation controls, Outline moved up above Font, and the default text size is now 70.
+
+v2.0: 261102
+	1. 10-bit export. A 10-bit checkbox in the video settings renders the export at 16 bits per channel and uses the encoder's 10-bit format. It works with the software H.265, H.264, ProRes, FFV1, VP9 and AV1 encoders, and with NVIDIA and VAAPI H.265. Hardware H.264 cannot encode 10-bit, so the checkbox is off for those.
+	2. 10-bit decoding. 10-bit 4:2:0 footage such as H.265 from phones and cameras is decoded at 10 bits on the GPU, when the graphics card supports 16-bit textures. Other footage is unchanged.
+	3. Compositing at 16 bits per channel where the graphics card supports it. The viewer and frame export still show 8-bit output, dithered. This changes the output slightly for all footage and uses more GPU memory bandwidth.
+	4. 10-bit exports from 8-bit sources are dithered, so smooth gradients do not band.
+	5. The colour range of the source is passed to the video filter graph, which stops the "Changing video frame properties on the fly" warnings.
+	6. Effect Controls shows Video and Audio tabs, one section at a time. The Add Effect buttons stay visible while the list scrolls, and the keyframe view lists only the effects on screen.
+	7. Docked panels show their name once, in the tab. Floating panels keep their title bar so they can still be moved.
+	8. A saved font that is not installed on this machine stays selected, instead of logging a warning on every refresh.
