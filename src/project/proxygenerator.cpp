@@ -116,8 +116,11 @@ static bool build_vaapi_scaler(AVCodecContext* dec_ctx, const AVFrame* first_fra
   par->sample_aspect_ratio = dec_ctx->sample_aspect_ratio;
   // Declare the color properties of the frames that will be fed in. A mismatch makes the filter graph warn on every
   // frame and may shift the colors of the proxy.
+#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(10, 0, 0)
+  // Older libavfilter headers (FFmpeg 6.x, as in Ubuntu 24.04) do not have these fields
   par->color_space = first_frame->colorspace;
   par->color_range = first_frame->color_range;
+#endif
   av_buffersrc_parameters_set(scaler.src, par);
   av_free(par);
   if (scaler.src == nullptr || avfilter_init_str(scaler.src, nullptr) < 0) return false;
