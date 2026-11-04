@@ -82,11 +82,8 @@ ExportDialog::ExportDialog(QWidget* parent) : QDialog(parent) {
   setWindowTitle(tr("Export \"%1\"").arg(amber::ActiveSequence->name));
   setup_ui();
 
+  // Export the entire sequence by default, even when the sequence has an In/Out work area
   rangeCombobox->setCurrentIndex(0);
-  if (amber::ActiveSequence->using_workarea) {
-    rangeCombobox->setEnabled(true);
-    rangeCombobox->setCurrentIndex(1);
-  }
 
   format_strings.resize(FORMAT_SIZE);
   format_strings[FORMAT_3GPP] = "3GPP";
