@@ -22,6 +22,7 @@
 #define EXPORTTHREAD_H
 
 #include <atomic>
+#include <vector>
 #include <QThread>
 #include <QMutex>
 #include <QOffscreenSurface>
@@ -35,6 +36,15 @@ struct AVStream;
 struct AVCodec;
 struct SwsContext;
 struct SwrContext;
+class RenderThread;
+
+// One horizontal band of a 10-bit frame, converted on its own thread. in0/in1 include the overlap rows that keep
+// the chroma filter at the band edges identical to converting the whole frame; y0/y1 are the rows kept.
+struct ExportSwsBand {
+  int y0{0}, y1{0}, in0{0}, in1{0};
+  SwsContext* ctx{nullptr};
+  AVFrame* tmp{nullptr};
+};
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -115,8 +125,12 @@ private:
   const AVCodec* vcodec{nullptr};
   AVCodecContext* vcodec_ctx{nullptr};
   AVFrame* video_frame{nullptr};
+  // Second frame buffer: the next frame renders into it while the current one is encoded
+  AVFrame* video_frame_alt{nullptr};
   AVFrame* sws_frame{nullptr};
   SwsContext* sws_ctx{nullptr};
+  // Non-empty when 10-bit output is converted in bands on several threads; otherwise sws_ctx is used
+  std::vector<ExportSwsBand> sws_bands_;
   // Software format frames are converted to before encoding; VAAPI encoders take it from GPU surfaces instead
   AVPixelFormat sw_pix_fmt{AV_PIX_FMT_NONE};
   // True when the chosen output format is 10-bit or deeper: frames are rendered at 16 bits per channel
@@ -147,6 +161,12 @@ private:
   QOffscreenSurface* gl_fallback_surface_{nullptr};
 private slots:
   void wake();
+
+  // Pipelined rendering helpers. wait_for_render() returns 0 when the frame is ready, 1 when interrupted and 2
+  // when the GPU renderer failed. Callers hold mutex, as run() does.
+  void start_video_render(RenderThread* renderer, AVFrame* buf);
+  int wait_for_render(RenderThread* renderer);
+  int render_frame_sync(RenderThread* renderer, AVFrame* buf);
 };
 
 #endif // EXPORTTHREAD_H

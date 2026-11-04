@@ -36,6 +36,10 @@ extern "C" {
 #include <QPainter>
 #include <QtMath>
 
+#include <thread>
+#include <utility>
+#include <vector>
+
 #include "global/config.h"
 #include "global/global.h"
 #include "engine/sequence.h"
@@ -106,18 +110,79 @@ static float dither_noise(quint32 n) {
 // The 16-bit render target reads back as half-float RGBA. Rewrite each channel in place as an unsigned
 // 16-bit value (0-65535) so swscale can read the frame as RGBA64. Half an 8-bit step of noise is added first,
 // so an 8-bit source's steps become a dithered transition in the 10-bit output instead of hard bands.
-static void half_float_to_unorm16(AVFrame* frame) {
+//
+// Converting each half float in software is the slow part of this loop, so every 16-bit pattern is
+// converted once into a table. The table holds the same float values, so the output is unchanged.
+static const float* half_to_float_table() {
+  static const std::vector<float> table = [] {
+    std::vector<float> t(65536);
+    for (quint32 bits = 0; bits < 65536; bits++) {
+      qfloat16 half;
+      quint16 b = quint16(bits);
+      memcpy(&half, &b, sizeof(quint16));
+      t[bits] = float(half);
+    }
+    return t;
+  }();
+  return table.data();
+}
+
+// Each row is independent, so rows are split across threads. The per-row work is the same either way.
+static void convert_rows(AVFrame* frame, int y0, int y1) {
   const int channels = 4;
-  for (int y = 0; y < frame->height; y++) {
+  const float* half_to_float = half_to_float_table();
+  for (int y = y0; y < y1; y++) {
     quint16* row = reinterpret_cast<quint16*>(frame->data[0] + y * frame->linesize[0]);
     for (int i = 0; i < frame->width * channels; i++) {
-      qfloat16 half;
-      memcpy(&half, &row[i], sizeof(quint16));
       float noise = dither_noise(quint32(y) * quint32(frame->width * channels) + quint32(i)) - 0.5f;
-      float value = qBound(0.0f, float(half) + noise / 255.0f, 1.0f);
+      float value = qBound(0.0f, half_to_float[row[i]] + noise / 255.0f, 1.0f);
       row[i] = quint16(value * 65535.0f + 0.5f);
     }
   }
+}
+
+// Overlap rows on each side of a band. Chroma filtering reaches a couple of rows past a band edge, so this is more than enough.
+static const int kSwsBandOverlap = 16;
+
+// Converts src into dst one band per thread. Each band writes only its own rows, so the result matches a single
+// full-frame conversion (checked in a benchmark with the same band layout).
+static void scale_bands(std::vector<ExportSwsBand>& bands, AVFrame* src, AVFrame* dst) {
+  std::vector<std::thread> workers;
+  for (auto& b : bands) {
+    workers.emplace_back([&b, src] {
+      const uint8_t* sp[4] = {src->data[0] + b.in0 * src->linesize[0], nullptr, nullptr, nullptr};
+      int sl[4] = {src->linesize[0], 0, 0, 0};
+      sws_scale(b.ctx, sp, sl, 0, b.in1 - b.in0, b.tmp->data, b.tmp->linesize);
+    });
+  }
+  for (auto& w : workers) w.join();
+
+  const int row_bytes = dst->width * 2;  // 16-bit samples
+  for (const auto& b : bands) {
+    const int ly = b.y0 - b.in0;
+    for (int y = 0; y < b.y1 - b.y0; y++) {
+      memcpy(dst->data[0] + (b.y0 + y) * dst->linesize[0], b.tmp->data[0] + (ly + y) * b.tmp->linesize[0], row_bytes);
+    }
+    // Chroma is 4:2:0 interleaved: one chroma row per two luma rows
+    for (int y = 0; y < (b.y1 - b.y0) / 2; y++) {
+      memcpy(dst->data[1] + (b.y0 / 2 + y) * dst->linesize[1], b.tmp->data[1] + (ly / 2 + y) * b.tmp->linesize[1], row_bytes);
+    }
+  }
+}
+
+static void half_float_to_unorm16(AVFrame* frame) {
+  const int threads = qBound(1, static_cast<int>(std::thread::hardware_concurrency()), 8);
+  if (threads == 1 || frame->height < threads * 4) {
+    convert_rows(frame, 0, frame->height);
+    return;
+  }
+  std::vector<std::thread> workers;
+  for (int k = 0; k < threads; k++) {
+    int y0 = frame->height * k / threads;
+    int y1 = frame->height * (k + 1) / threads;
+    workers.emplace_back(convert_rows, frame, y0, y1);
+  }
+  for (auto& w : workers) w.join();
 }
 
 ExportThread::ExportThread(const ExportParams &params,
@@ -349,6 +414,17 @@ bool ExportThread::SetupVideo() {
     return false;
   }
 
+  video_frame_alt = av_frame_alloc();
+  video_frame_alt->format = video_frame->format;
+  video_frame_alt->width = video_frame->width;
+  video_frame_alt->height = video_frame->height;
+  ret = av_frame_get_buffer(video_frame_alt, 0);
+  if (ret < 0) {
+    qCritical() << "Could not allocate video frame buffer." << ret;
+    export_error = tr("could not allocate video frame buffer (%1)").arg(QString::number(ret));
+    return false;
+  }
+
   video_pkt = av_packet_alloc();
 
   // Set up conversion context
@@ -364,6 +440,42 @@ bool ExportThread::SetupVideo() {
         nullptr,
         nullptr
         );
+
+  // 10-bit output from a sequence at the export size is converted in bands on several threads
+  const int height = params_.video_height;
+  const int threads = qBound(1, static_cast<int>(std::thread::hardware_concurrency()), 8);
+  if (video_10bit_ && sw_pix_fmt == AV_PIX_FMT_P010LE && amber::ActiveSequence->width == params_.video_width &&
+      height == amber::ActiveSequence->height && height % 2 == 0 && threads > 1 &&
+      height >= threads * 64) {
+    bool ok = true;
+    for (int k = 0; k < threads && ok; k++) {
+      ExportSwsBand b;
+      b.y0 = (height * k / threads) & ~1;
+      b.y1 = (k == threads - 1) ? height : ((height * (k + 1) / threads) & ~1);
+      b.in0 = qMax(0, b.y0 - kSwsBandOverlap);
+      b.in1 = qMin(height, b.y1 + kSwsBandOverlap);
+      b.ctx = sws_getContext(params_.video_width, b.in1 - b.in0, AV_PIX_FMT_RGBA64LE,
+                             params_.video_width, b.in1 - b.in0, sw_pix_fmt, SWS_BILINEAR, nullptr, nullptr, nullptr);
+      b.tmp = av_frame_alloc();
+      if (b.ctx == nullptr || b.tmp == nullptr) {
+        ok = false;
+      } else {
+        b.tmp->format = sw_pix_fmt;
+        b.tmp->width = params_.video_width;
+        b.tmp->height = b.in1 - b.in0;
+        ok = av_frame_get_buffer(b.tmp, 0) >= 0;
+      }
+      sws_bands_.push_back(b);
+    }
+    if (!ok) {
+      // Fall back to the single full-frame context
+      for (auto& b : sws_bands_) {
+        sws_freeContext(b.ctx);
+        av_frame_free(&b.tmp);
+      }
+      sws_bands_.clear();
+    }
+  }
 
   return true;
 }
@@ -390,6 +502,33 @@ bool ExportThread::SetupAudio() {
 
   // Set audio stream's ID to 1
   audio_stream->id = 1;
+
+  // Sequences can carry an odd source rate (e.g. 47998 Hz), and encoders such as AAC refuse rates they do not list.
+  // Use the supported rate closest to the requested one.
+  {
+    const int* rates = nullptr;
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 0, 0)
+    const void* config = nullptr;
+    int num_rates = 0;
+    if (avcodec_get_supported_config(nullptr, acodec, AV_CODEC_CONFIG_SAMPLE_RATE, 0, &config, &num_rates) == 0) {
+      rates = static_cast<const int*>(config);
+    }
+#else
+    rates = acodec->supported_samplerates;
+#endif
+    if (rates != nullptr) {
+      int best = 0;
+      for (int i = 0; rates[i] != 0; i++) {
+        if (best == 0 || qAbs(rates[i] - params_.audio_sampling_rate) < qAbs(best - params_.audio_sampling_rate)) {
+          best = rates[i];
+        }
+      }
+      if (best != 0 && best != params_.audio_sampling_rate) {
+        qWarning() << "Audio encoder does not support" << params_.audio_sampling_rate << "Hz; using" << best << "Hz";
+        params_.audio_sampling_rate = best;
+      }
+    }
+  }
 
   // set sample rate to use for project
   audio_rendering_rate = params_.audio_sampling_rate;
@@ -587,11 +726,29 @@ bool ExportThread::Export()
   renderer->start(QThread::HighestPriority);
   connect(renderer, &RenderThread::ready, this, &ExportThread::wake);
 
+  // The first frame is rendered before the loop. Each later frame is rendered during the previous frame's encode.
+  if (params_.video_enabled) {
+    int status = render_frame_sync(renderer, video_frame);
+    if (status == 1) {
+      renderer->cancel();
+      delete renderer;
+      goto cleanup_state;
+    }
+    if (status == 2) {
+      export_error = tr("Could not initialize the GPU renderer.");
+      frames_ok = false;
+      goto cleanup_renderer;
+    }
+  }
+
   // Loop from now (set to the beginning frame earlier) to the end of the frame
   while (amber::ActiveSequence->playhead <= params_.end_frame && !interrupt_) {
 
     // Start timing how long this frame will take
     frame_start_time = QDateTime::currentMSecsSinceEpoch();
+
+    // The frame this iteration encodes (the playhead moves on before the encode finishes)
+    const long frame = amber::ActiveSequence->playhead;
 
     // If we're exporting audio, run compose_audio() which will write mixed audio to the internal audio buffer
     if (params_.audio_enabled) {
@@ -600,45 +757,17 @@ bool ExportThread::Export()
       amber::rendering::compose_audio(nullptr, amber::ActiveSequence.get(), 1, true);
     }
 
-    // If we're exporting video, trigger a render on the RenderThread
-    if (params_.video_enabled) {
-      do {
-        // TODO optimize by rendering the next frame while encoding the last
-        render_complete_ = false;
-        renderer->start_render(amber::ActiveSequence.get(), 1, nullptr, video_frame->data[0],
-                               video_frame->linesize[0] / (video_10bit_ ? 8 : 4), 0, false, video_10bit_);
-
-        // Wait for RenderThread to return (predicate guards against lost wakeup)
-        while (!render_complete_ && !interrupt_) {
-          waitCond.wait(&mutex);
-        }
-
-        if (interrupt_) {
-          renderer->cancel();
-          delete renderer;
-          goto cleanup_state;
-        }
-
-        // QRhi creation failed: ready() still fired, but there is no frame and there never will be
-        if (renderer->rhi_failed()) {
-          export_error = tr("Could not initialize the GPU renderer.");
-          frames_ok = false;
-          goto cleanup_renderer;
-        }
-
-        // If the RenderThread failed, do another render
-      } while (renderer->did_texture_fail());
-
-      if (interrupt_) {
-        renderer->cancel();
-        delete renderer;
-        goto cleanup_state;
-      }
-
+    // Video: this frame was rendered before the loop or during the previous iteration. Start rendering the next frame
+    // now, so the GPU works while this frame is converted and encoded. The playhead moves first, because the render
+    // reads the playhead when it runs.
+    const bool render_next = params_.video_enabled && frame + 1 <= params_.end_frame;
+    amber::ActiveSequence->playhead = frame + 1;
+    if (render_next) {
+      start_video_render(renderer, video_frame_alt);
     }
 
-    // Get the current sequence playhead in seconds (used for timestamp calculations later on)
-    double timecode_secs = double(amber::ActiveSequence->playhead - params_.start_frame) / amber::ActiveSequence->frame_rate;
+    // Timecode of this frame in seconds (used for timestamp calculations later on)
+    double timecode_secs = double(frame - params_.start_frame) / amber::ActiveSequence->frame_rate;
 
     // If we're exporting video, construct an AVFrame in the destination codec's pixel format to convert the raw RGBA
     // OpenGL buffer to
@@ -665,7 +794,11 @@ bool ExportThread::Export()
       av_frame_get_buffer(sws_frame, 0);
 
       // Convert raw RGBA buffer to format expected by the encoder
-      sws_scale(sws_ctx, video_frame->data, video_frame->linesize, 0, video_frame->height, sws_frame->data, sws_frame->linesize);
+      if (!sws_bands_.empty()) {
+        scale_bands(sws_bands_, video_frame, sws_frame);
+      } else {
+        sws_scale(sws_ctx, video_frame->data, video_frame->linesize, 0, video_frame->height, sws_frame->data, sws_frame->linesize);
+      }
       sws_frame->pts = qRound(timecode_secs/av_q2d(vcodec_ctx->time_base));
 
       // VAAPI encoders need the frame copied into a GPU surface first
@@ -750,15 +883,32 @@ bool ExportThread::Export()
     // Generating encoding statistics (e.g. the time it took to encode this frame/estimated remaining time)
     frame_time = (QDateTime::currentMSecsSinceEpoch()-frame_start_time);
     total_time += frame_time;
-    remaining_frames = (params_.end_frame - amber::ActiveSequence->playhead);
+    remaining_frames = (params_.end_frame - frame);
     avg_time = (total_time/frame_count);
     eta = (remaining_frames*avg_time);
 
     // Emit a signal for the percent of the sequence that's been encoded so far
-    emit ProgressChanged(qRound((double(amber::ActiveSequence->playhead - params_.start_frame) / double(params_.end_frame - params_.start_frame)) * 100.0), eta);
+    emit ProgressChanged(qRound((double(frame - params_.start_frame) / double(params_.end_frame - params_.start_frame)) * 100.0), eta);
 
-    // Increment sequence playhead
-    amber::ActiveSequence->playhead++;
+    // The next frame has been rendering during this frame's encode. Wait for it, then swap it in as the current frame.
+    if (render_next) {
+      int status = wait_for_render(renderer);
+      if (status == 0 && renderer->did_texture_fail()) {
+        // The RenderThread failed. The playhead is already on the next frame, so render it again.
+        status = render_frame_sync(renderer, video_frame_alt);
+      }
+      if (status == 1) {
+        renderer->cancel();
+        delete renderer;
+        goto cleanup_state;
+      }
+      if (status == 2) {
+        export_error = tr("Could not initialize the GPU renderer.");
+        frames_ok = false;
+        goto cleanup_renderer;
+      }
+      std::swap(video_frame, video_frame_alt);
+    }
 
     // Increment frame count (used for generating encoding statistics above)
     frame_count++;
@@ -847,9 +997,19 @@ void ExportThread::Cleanup()
     av_frame_free(&video_frame);
   }
 
+  if (video_frame_alt != nullptr) {
+    av_frame_free(&video_frame_alt);
+  }
+
   if (video_pkt != nullptr) {
     av_packet_free(&video_pkt);
   }
+
+  for (auto& b : sws_bands_) {
+    sws_freeContext(b.ctx);
+    av_frame_free(&b.tmp);
+  }
+  sws_bands_.clear();
 
   if (sws_ctx != nullptr) {
     sws_freeContext(sws_ctx);
@@ -927,6 +1087,40 @@ void ExportThread::play_wake()
   waiting_for_audio_ = false;
   waitCond.wakeAll();
   mutex.unlock();
+}
+
+void ExportThread::start_video_render(RenderThread* renderer, AVFrame* buf) {
+  render_complete_ = false;
+  renderer->start_render(amber::ActiveSequence.get(), 1, nullptr, buf->data[0],
+                         buf->linesize[0] / (video_10bit_ ? 8 : 4), 0, false, video_10bit_);
+}
+
+int ExportThread::wait_for_render(RenderThread* renderer) {
+  // Predicate guards against a lost wakeup
+  while (!render_complete_ && !interrupt_) {
+    waitCond.wait(&mutex);
+  }
+  if (interrupt_) {
+    return 1;
+  }
+  // QRhi creation failed: ready() still fired, but there is no frame and there never will be
+  if (renderer->rhi_failed()) {
+    return 2;
+  }
+  return 0;
+}
+
+int ExportThread::render_frame_sync(RenderThread* renderer, AVFrame* buf) {
+  int status = 0;
+  do {
+    start_video_render(renderer, buf);
+    status = wait_for_render(renderer);
+    if (status != 0) {
+      return status;
+    }
+    // If the RenderThread failed, do another render
+  } while (renderer->did_texture_fail());
+  return 0;
 }
 
 void ExportThread::wake() {
