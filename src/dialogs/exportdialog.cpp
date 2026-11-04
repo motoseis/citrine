@@ -156,9 +156,13 @@ static void add_gpu_codecs(QComboBox* box) {
     const AVCodec* codec_info = avcodec_find_encoder_by_name(gpu.encoder);
     if (codec_info == nullptr || box->findData(gpu.codec) < 0) continue;
 
-    // Probe the GPU device; without a working driver the encoder can't be used
+    // Probe the GPU device; without a working driver the encoder can't be used. CITRINE_VAAPI_DEVICE picks the
+    // DRM render node for VAAPI, as in the export thread.
+    const QByteArray vaapi_device = qgetenv("CITRINE_VAAPI_DEVICE");
+    const char* device_name = (gpu.device == AV_HWDEVICE_TYPE_VAAPI && !vaapi_device.isEmpty()) ? vaapi_device.constData()
+                                                                                              : nullptr;
     AVBufferRef* device = nullptr;
-    if (av_hwdevice_ctx_create(&device, gpu.device, nullptr, nullptr, 0) < 0) continue;
+    if (av_hwdevice_ctx_create(&device, gpu.device, device_name, nullptr, 0) < 0) continue;
     av_buffer_unref(&device);
 
     box->addItem(codec_info->long_name, gpu.codec);

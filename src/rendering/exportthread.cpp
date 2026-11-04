@@ -352,7 +352,10 @@ bool ExportThread::SetupVideo() {
 
   // VAAPI encoders need a device and a surface pool to draw frames from
   if (vaapi) {
-    if (av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0) < 0) {
+    // CITRINE_VAAPI_DEVICE picks the DRM render node (e.g. /dev/dri/renderD129); by default FFmpeg chooses
+    const QByteArray vaapi_device = qgetenv("CITRINE_VAAPI_DEVICE");
+    if (av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_VAAPI,
+                               vaapi_device.isEmpty() ? nullptr : vaapi_device.constData(), nullptr, 0) < 0) {
       qCritical() << "Could not create VAAPI device for export";
       export_error = tr("could not create VAAPI device for export");
       av_dict_free(&opts);
