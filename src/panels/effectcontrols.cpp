@@ -28,6 +28,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QShowEvent>
+#include <QSignalBlocker>
 #include <QSpacerItem>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -655,6 +656,19 @@ void EffectControls::update_effect_tabs() {
   }
 
   bool show_video = effect_tabs_->currentIndex() == 0;
+
+  // If the tab on screen has nothing to show for the selection, switch to the one that does. Block the signal so
+  // this doesn't re-enter; the refresh below covers the change.
+  if (show_video && !has_video && has_audio) {
+    QSignalBlocker blocker(effect_tabs_);
+    effect_tabs_->setCurrentIndex(1);
+    show_video = false;
+  } else if (!show_video && !has_audio && has_video) {
+    QSignalBlocker blocker(effect_tabs_);
+    effect_tabs_->setCurrentIndex(0);
+    show_video = true;
+  }
+
   effect_tabs_->setVisible(has_video || has_audio);
 
   vcontainer->setVisible(has_video && show_video);
@@ -671,12 +685,13 @@ void EffectControls::refresh_keyframe_effects() {
 
   QVector<EffectUI*> shown;
   for (auto ui : open_effects_) {
-    bool is_audio = ui->GetEffect()->meta->type == EFFECT_TYPE_AUDIO;
+    bool is_audio = ui->GetEffect()->meta->subtype == EFFECT_TYPE_AUDIO;
     if (is_audio == !show_video) {
       shown.append(ui);
     }
   }
   keyframeView->SetEffects(shown);
+  keyframeView->update();
 }
 
 void EffectControls::Reload() {
