@@ -27,6 +27,7 @@ extern "C" {
 }
 
 #include <QCoreApplication>
+#include <QKeyEvent>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -44,6 +45,7 @@ extern "C" {
 
 #include "dialogs/advancedvideodialog.h"
 #include "dialogs/exportsavepresetdialog.h"
+#include "engine/cacher.h"
 #include "global/config.h"
 #include "global/global.h"
 #include "panels/panels.h"
@@ -140,6 +142,32 @@ void ExportDialog::add_codec_to_combobox(QComboBox* box, enum AVCodecID codec) {
 // Adds the GPU (NVENC and VAAPI) H.264/H.265 encoders after the CPU ones so saved codec indexes keep their meaning.
 // An encoder is only listed when FFmpeg has it and its GPU device can be opened on this machine.
 // The encoder name is stored in Qt::UserRole + 1; the codec ID stays in the item data as for CPU encoders.
+// A checkable QGroupBox switches itself off when it receives a keyboard shortcut event, which is how a Return in
+// the settings fields was unticking Video. Swallow those events so the tick box only changes with the mouse or
+// the Space key.
+class ExportVideoGroupBox : public QGroupBox {
+ public:
+  using QGroupBox::QGroupBox;
+
+ protected:
+  bool event(QEvent* e) override {
+    if (e->type() == QEvent::Shortcut) {
+      e->accept();
+      return true;
+    }
+    // Return in a settings field is handled by the group box, which unticks itself (the trace shows it toggling
+    // from a key press with no mouse involved). Swallow it so the tick only changes with the mouse.
+    if (e->type() == QEvent::KeyPress) {
+      const int key = static_cast<QKeyEvent*>(e)->key();
+      if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+        e->accept();
+        return true;
+      }
+    }
+    return QGroupBox::event(e);
+  }
+};
+
 static void add_gpu_codecs(QComboBox* box) {
   const struct {
     AVCodecID codec;
@@ -386,6 +414,9 @@ void ExportDialog::export_thread_finished() {
   // thread" if called from ExportThread).
   amber::Global->set_rendering_state(false);
 
+  // Timeline playback may use proxies again from now on
+  cacher_ignore_proxies = false;
+
   // Clear audio buffer
   clear_audio_ibuffer();
 
@@ -602,6 +633,10 @@ void ExportDialog::StartExport() {
     // from offset 0 instead of silence (fixes silent audio on In/Out range exports — GitHub issue #25).
     if (params.audio_enabled) clear_audio_ibuffer(params.start_frame);
 
+    // Export must read the original footage, never a half-resolution proxy. Set before closing the clips so
+    // they reopen against the originals.
+    cacher_ignore_proxies = true;
+
     // Close all currently open clips
     close_active_clips(amber::ActiveSequence.get());
 
@@ -737,8 +772,10 @@ void ExportDialog::comp_type_changed(int) {
                "0 = lossless\n17-18 = visually lossless (compressed, but unnoticeable)\n23 = high "
                "quality\n51 = lowest quality possible"));
       }
-      // Defaults follow each encoder's own: libx264/h264_nvenc 23, libx265/hevc_nvenc 28
-      videobitrateSpinbox->setValue(vcodecCombobox->currentData().toInt() == AV_CODEC_ID_H265 ? 28 : 23);
+      // Defaults follow each encoder's own: libx264 and h264_nvenc 23, libx265 28, hevc_nvenc 23 (NVENC's quality
+      // scale gives a lower bitrate than x265 at the same number, so 23 keeps detail close to the source)
+      const bool hevc_software = vcodecCombobox->currentData().toInt() == AV_CODEC_ID_H265 && encoder != "hevc_nvenc";
+      videobitrateSpinbox->setValue(hevc_software ? 28 : 23);
       videobitrateSpinbox->setMaximum(51);
       videoQualityHelpLabel->setVisible(true);
       break;
@@ -766,6 +803,7 @@ void ExportDialog::setup_ui() {
   PopulatePresetCombo();
   preset_layout->addWidget(preset_combo_);
   QPushButton* save_preset_btn = new QPushButton(tr("Save Preset..."), this);
+  save_preset_btn->setAutoDefault(false);
   connect(save_preset_btn, &QPushButton::clicked, this, &ExportDialog::save_preset_clicked);
   preset_layout->addWidget(save_preset_btn);
   verticalLayout->addLayout(preset_layout);
@@ -793,7 +831,7 @@ void ExportDialog::setup_ui() {
 
   verticalLayout->addLayout(range_layout);
 
-  videoGroupbox = new QGroupBox(this);
+  videoGroupbox = new ExportVideoGroupBox(this);
   videoGroupbox->setTitle(tr("Video"));
   videoGroupbox->setFlat(false);
   videoGroupbox->setCheckable(true);
@@ -839,6 +877,7 @@ void ExportDialog::setup_ui() {
   videoGridLayout->addWidget(videoQualityHelpLabel, 6, 0, 1, 2);
 
   QPushButton* advanced_video_button = new QPushButton(tr("Advanced"));
+  advanced_video_button->setAutoDefault(false);
   connect(advanced_video_button, &QPushButton::clicked, this, &ExportDialog::open_advanced_video_dialog);
   videoGridLayout->addWidget(advanced_video_button, 7, 1);
 
@@ -893,12 +932,15 @@ void ExportDialog::setup_ui() {
 
   export_button = new QPushButton(this);
   export_button->setText("Export");
+  // Return in a settings field must not click Export or Cancel (it was unticking the Video box)
+  export_button->setAutoDefault(false);
   connect(export_button, &QPushButton::clicked, this, &ExportDialog::StartExport);
 
   buttonLayout->addWidget(export_button);
 
   cancel_button = new QPushButton(this);
   cancel_button->setText("Cancel");
+  cancel_button->setAutoDefault(false);
   connect(cancel_button, &QPushButton::clicked, this, &QDialog::reject);
 
   buttonLayout->addWidget(cancel_button);

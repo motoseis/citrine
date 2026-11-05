@@ -98,7 +98,7 @@ bool Cacher::openWorkerOpenCodec(Footage* m, const FootageStream* ms) {
   }
   // Resolve file path (proxy or original)
   QByteArray ba;
-  if (m->proxy && !m->proxy_path.isEmpty() && QFileInfo::exists(m->proxy_path)) {
+  if (m->proxy && !m->proxy_path.isEmpty() && QFileInfo::exists(m->proxy_path) && !cacher_ignore_proxies.load()) {
     ba = m->proxy_path.toUtf8();
   } else {
     ba = m->url.toUtf8();
@@ -159,7 +159,10 @@ bool Cacher::openWorkerOpenCodec(Footage* m, const FootageStream* ms) {
   }
 
   // Try hardware-accelerated decoding if enabled and this is a video stream
-  if (amber::CurrentConfig.hardware_decoding && stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+  // Export decodes in software: the proxies it replaces were always software-decoded, and hardware decode
+  // of the originals is the suspect for the export freeze.
+  if (amber::CurrentConfig.hardware_decoding && !cacher_ignore_proxies.load() &&
+      stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
     static const AVHWDeviceType hw_types[] = {
 #if defined(__linux__)
       // CUDA comes after VAAPI so Nvidia GPUs without a VAAPI driver still get hardware decoding

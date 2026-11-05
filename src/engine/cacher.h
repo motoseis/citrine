@@ -49,6 +49,13 @@ extern "C" {
 
 #include "rendering/clipqueue.h"
 
+/**
+ * When true, cachers open the original footage even if a proxy exists. Set for the duration of an export so
+ * output is never built from lower-resolution proxy files. Clips must be closed and reopened after changing it
+ * for the change to take effect.
+ */
+inline std::atomic<bool> cacher_ignore_proxies{false};
+
 class Clip;
 class Footage;
 struct FootageStream;

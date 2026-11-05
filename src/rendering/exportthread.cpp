@@ -327,6 +327,10 @@ bool ExportThread::SetupVideo() {
         // NVENC has no CRF; constant quality is VBR with a cq target on the same 0-51 scale
         av_opt_set(vcodec_ctx->priv_data, "rc", "vbr", AV_OPT_SEARCH_CHILDREN);
         av_opt_set(vcodec_ctx->priv_data, "cq", QString::number(static_cast<int>(params_.video_bitrate)).toUtf8(), AV_OPT_SEARCH_CHILDREN);
+        // ffmpeg's NVENC defaults set a 2 Mbps target, and without an explicit ceiling the VBR output stays near
+        // 10 Mbps whatever the cq value. Clear the target and set a high ceiling so the quality value decides.
+        vcodec_ctx->bit_rate = 0;
+        vcodec_ctx->rc_max_rate = 100000000;
       } else if (vaapi) {
         // VAAPI has no CRF either; constant QP is the closest match on a 0-52 scale
         av_opt_set(vcodec_ctx->priv_data, "rc_mode", "CQP", AV_OPT_SEARCH_CHILDREN);
