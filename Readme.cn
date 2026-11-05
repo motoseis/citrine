@@ -132,3 +132,13 @@ v2.0: 261102
 	10. Audio effect keyframes show again in the Effect Controls keyframe view. They had been missing since the Video and Audio tabs were added.
 	11. Faster 10-bit export. Pixel conversion and scaling use several CPU cores, and the next frame renders while the current one is encoded. The output is unchanged.
 	12. Export uses the closest sample rate that the audio encoder supports. A sequence at an unusual rate, such as 47998 Hz from some source files, no longer fails to export with AAC.
+
+v2.0: 261105
+	1. Export reads the original footage instead of the half-resolution proxy, so exported video is
+	   sharp. Timeline preview still uses proxies.
+	2. Export decodes in software and does not use hardware decoding while it runs. This fixes an export
+	   that froze with CUDA decoding. Exports of heavy footage are slower as a result.
+	3. NVIDIA (NVENC) quality now controls the bitrate. Previously the Quality value had almost no effect and
+	   output stayed near 10 Mbps. The default for NVIDIA H.265 is now 23 (was 28).
+	4. Pressing Return in the export settings no longer unticks the Video section, which could make the export
+	   audio-only. Return also no longer starts or cancels the export; use the buttons instead.
