@@ -772,9 +772,10 @@ void ExportDialog::comp_type_changed(int) {
                "0 = lossless\n17-18 = visually lossless (compressed, but unnoticeable)\n23 = high "
                "quality\n51 = lowest quality possible"));
       }
-      // Defaults follow each encoder's own: libx264 and h264_nvenc 23, libx265 28, hevc_nvenc 23 (NVENC's quality
-      // scale gives a lower bitrate than x265 at the same number, so 23 keeps detail close to the source)
-      const bool hevc_software = vcodecCombobox->currentData().toInt() == AV_CODEC_ID_H265 && encoder != "hevc_nvenc";
+      // Defaults follow each encoder's own: libx264, h264_nvenc, hevc_nvenc and hevc_vaapi 23; libx265 28. The GPU
+      // encoders' quality scales give a lower bitrate than x265 at the same number, so 23 keeps detail close to the source
+      const bool hevc_software = vcodecCombobox->currentData().toInt() == AV_CODEC_ID_H265 &&
+                                 encoder != "hevc_nvenc" && encoder != "hevc_vaapi";
       videobitrateSpinbox->setValue(hevc_software ? 28 : 23);
       videobitrateSpinbox->setMaximum(51);
       videoQualityHelpLabel->setVisible(true);
