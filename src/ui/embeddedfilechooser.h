@@ -32,11 +32,14 @@ public:
 
   const QString& getFilename();
   void setFilename(const QString& s);
+  // Shows a problem message in red under the file name; empty clears it.
+  void setError(const QString& error);
 signals:
   void changed(const QString& s);
 private:
   QLabel* file_label;
   QString filename;
+  QString error;
   void update_label();
 private slots:
   void browse();

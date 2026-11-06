@@ -34,6 +34,13 @@ public:
   QString GetFileAt(double timecode);
 
   /**
+   * @brief Set a problem message to show under the file name (empty clears it)
+   *
+   * Used e.g. when a LUT file is present but cannot be parsed. Not saved with the project.
+   */
+  void SetError(const QString& error);
+
+  /**
    * @brief Reimplementation of EffectField::CreateWidget()
    *
    * Creates and connects to a EmbeddedFileChooser.
@@ -44,6 +51,10 @@ public:
    * @brief Reimplementation of EffectField::UpdateWidgetValue()
    */
   void UpdateWidgetValue(QWidget *widget, double timecode) override;
+
+signals:
+  void ErrorChanged(const QString& error);
+
 private slots:
   /**
    * @brief Internal function connected to any QWidget made from CreateWidget() to update the value based on user input
@@ -54,6 +65,9 @@ private slots:
    * is connected to the TextEditEx::textModified() signal.
    */
   void UpdateFromWidget(const QString &s);
+
+private:
+  QString error_;
 };
 
 #endif // FILEFIELD_H

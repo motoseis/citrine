@@ -139,7 +139,19 @@ void Cacher::CacheVideoWorker() {
     if (need_seek) {
       // we need to seek to retrieve this frame
 
+      // Reverse playback: the playhead moves toward older frames, so seek to a point one buffer-window
+      // before the target and decode forward. The frames from there up to the target are kept (the
+      // buffer's lower bound is the same window, see minimum_ts below), so the next reverse steps are
+      // served from the queue instead of seeking again on every frame.
       int64_t seek_ts = target_pts;
+      if (reversed) {
+        double lead_seconds = amber::CurrentConfig.upcoming_queue_size;
+        if (amber::CurrentConfig.upcoming_queue_type == amber::FRAME_QUEUE_TYPE_FRAMES) {
+          double fps = clip->media_frame_rate();
+          lead_seconds = (fps > 0.0) ? lead_seconds / fps : 0.0;
+        }
+        seek_ts = qMax<int64_t>(0, target_pts - seconds_to_timestamp(clip, lead_seconds));
+      }
       int64_t zero = 0;
 
       // Some formats don't seek reliably to the last keyframe, as a result we need to seek in a loop to ensure we

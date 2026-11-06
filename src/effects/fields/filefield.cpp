@@ -16,12 +16,21 @@ QString FileField::GetFileAt(double timecode)
   return GetValueAt(timecode).toString();
 }
 
+void FileField::SetError(const QString &error)
+{
+  if (error == error_) return;
+  error_ = error;
+  emit ErrorChanged(error_);
+}
+
 QWidget *FileField::CreateWidget(QWidget *existing)
 {
   EmbeddedFileChooser* efc = (existing != nullptr) ? static_cast<EmbeddedFileChooser*>(existing) : new EmbeddedFileChooser();
 
   connect(efc, &EmbeddedFileChooser::changed, this, &FileField::UpdateFromWidget);
   connect(this, &EffectField::EnabledChanged, efc, &QWidget::setEnabled);
+  connect(this, &FileField::ErrorChanged, efc, &EmbeddedFileChooser::setError);
+  efc->setError(error_);
 
   return efc;
 }
@@ -32,6 +41,7 @@ void FileField::UpdateWidgetValue(QWidget *widget, double timecode)
 
   efc->blockSignals(true);
   efc->setFilename(GetFileAt(timecode));
+  efc->setError(error_);
   efc->blockSignals(false);
 }
 

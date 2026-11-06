@@ -33,6 +33,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
@@ -184,6 +185,9 @@ Effect::Effect(Clip* c, const EffectMeta* em)
       parseEffectXml();
     }
   }
+
+  // LutStatusChanged is emitted from the render thread; this connection makes SetLutStatus run on the UI thread.
+  connect(this, &Effect::LutStatusChanged, this, &Effect::SetLutStatus);
 }
 
 void Effect::parseFieldElement(QXmlStreamReader& reader, EffectRow* row) {
@@ -1105,6 +1109,10 @@ FileField* Effect::findLutField() {
 
 bool Effect::needsLut() { return findLutField() != nullptr; }
 
+void Effect::SetLutStatus(const QString& error) {
+  if (FileField* f = findLutField()) f->SetError(error);
+}
+
 QString Effect::currentLutPath(double timecode) {
   FileField* f = findLutField();
   return f ? f->GetFileAt(timecode) : QString();
@@ -1114,6 +1122,13 @@ namespace {
 struct Lut3D {
   int size = 0;
   std::vector<float> data;
+  QString error;  // user-facing reason the file was rejected; empty on success
+
+  static Lut3D failed(const QString& reason) {
+    Lut3D lut;
+    lut.error = reason;
+    return lut;
+  }
 };
 
 Lut3D identityLut3D() {
@@ -1136,9 +1151,11 @@ Lut3D identityLut3D() {
 
 Lut3D loadCubeFile(const QString& path) {
   Lut3D lut;  // lut.size stays 0 on any failure path — callers already treat size<=0 as "no LUT"
+  // Some exporters separate values with tabs rather than spaces; accept any run of whitespace.
+  static const QRegularExpression kCubeWhitespace(QStringLiteral("\\s+"));
 
   QFile f(path);
-  if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return lut;
+  if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return Lut3D::failed(QObject::tr("Could not open LUT file"));
 
   QTextStream in(&f);
   bool sizeSeen = false;
@@ -1149,15 +1166,15 @@ Lut3D loadCubeFile(const QString& path) {
 
     if (line.startsWith("LUT_1D_SIZE")) {
       qWarning() << "LUT file uses LUT_1D_SIZE, only 3D LUTs are supported:" << path;
-      return Lut3D();  // reject outright
+      return Lut3D::failed(QObject::tr("1D LUTs are not supported; use a 3D .cube LUT"));  // reject outright
     }
 
     if (line.startsWith("LUT_3D_SIZE")) {
       bool ok = false;
-      int size = line.split(' ', Qt::SkipEmptyParts).last().toInt(&ok);
+      int size = line.split(kCubeWhitespace, Qt::SkipEmptyParts).last().toInt(&ok);
       if (!ok || size < 2 || size > 128) {
         qWarning() << "LUT file has invalid LUT_3D_SIZE:" << path;
-        return Lut3D();
+        return Lut3D::failed(QObject::tr("Invalid LUT_3D_SIZE (must be 2 to 128)"));
       }
       lut.size = size;
       sizeSeen = true;
@@ -1170,7 +1187,7 @@ Lut3D loadCubeFile(const QString& path) {
       // We don't support non-default DOMAIN_MIN/MAX; if present and non-default, reject
       // rather than silently misinterpreting the data range.
       if (line.startsWith("DOMAIN_")) {
-        QStringList parts = line.split(' ', Qt::SkipEmptyParts);
+        QStringList parts = line.split(kCubeWhitespace, Qt::SkipEmptyParts);
         if (parts.size() == 4) {
           bool ok0 = false, ok1 = false, ok2 = false;
           float a = parts[1].toFloat(&ok0);
@@ -1180,7 +1197,7 @@ Lut3D loadCubeFile(const QString& path) {
           bool isDefaultMax = line.startsWith("DOMAIN_MAX") && ok0 && ok1 && ok2 && a == 1.0f && b == 1.0f && c == 1.0f;
           if (!isDefaultMin && !isDefaultMax) {
             qWarning() << "LUT file has non-default DOMAIN_MIN/MAX, not supported:" << path;
-            return Lut3D();
+            return Lut3D::failed(QObject::tr("Non-default DOMAIN_MIN/DOMAIN_MAX is not supported"));
           }
         }
       }
@@ -1188,10 +1205,10 @@ Lut3D loadCubeFile(const QString& path) {
     }
 
     // A data row: exactly 3 whitespace-separated floats, C-locale, finite.
-    QStringList parts = line.split(' ', Qt::SkipEmptyParts);
+    QStringList parts = line.split(kCubeWhitespace, Qt::SkipEmptyParts);
     if (parts.size() != 3) {
       qWarning() << "LUT file has malformed data row:" << path;
-      return Lut3D();
+      return Lut3D::failed(QObject::tr("Malformed data row (expected 3 values per line)"));
     }
 
     bool ok0 = false, ok1 = false, ok2 = false;
@@ -1201,7 +1218,7 @@ Lut3D loadCubeFile(const QString& path) {
 
     if (!ok0 || !ok1 || !ok2 || !std::isfinite(r) || !std::isfinite(g) || !std::isfinite(b)) {
       qWarning() << "LUT file has invalid or non-finite value:" << path;
-      return Lut3D();
+      return Lut3D::failed(QObject::tr("Invalid or non-numeric value in data"));
     }
 
     lut.data.push_back(r);
@@ -1211,14 +1228,14 @@ Lut3D loadCubeFile(const QString& path) {
 
   if (!sizeSeen) {
     qWarning() << "LUT file missing LUT_3D_SIZE:" << path;
-    return Lut3D();
+    return Lut3D::failed(QObject::tr("Missing LUT_3D_SIZE line; not a valid 3D .cube LUT"));
   }
 
   const size_t expected = static_cast<size_t>(lut.size) * lut.size * lut.size * 3;
   if (lut.data.size() != expected) {
     qWarning() << "LUT file row count does not match declared size (truncated or oversized):" << path << "expected"
                << expected << "got" << lut.data.size();
-    return Lut3D();
+    return Lut3D::failed(QObject::tr("Data row count does not match LUT_3D_SIZE (file truncated or corrupt)"));
   }
 
   return lut;
@@ -1228,6 +1245,8 @@ Lut3D loadCubeFile(const QString& path) {
 QRhiTexture* Effect::process_lut(QRhi* rhi, QRhiResourceUpdateBatch* u, const QString& lutPath) {
   if (lutPath != loadedLutPath_) {
     Lut3D lut = lutPath.isEmpty() ? Lut3D() : loadCubeFile(lutPath);
+    // Runs on the render thread; the queued connection delivers this to the UI thread.
+    emit LutStatusChanged(lut.error);
 
     if (lut.size <= 0) {
       // No file picked, or the file failed to parse: fall back to an identity

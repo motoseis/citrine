@@ -30,6 +30,7 @@ EmbeddedFileChooser::EmbeddedFileChooser(QWidget* parent) : QWidget(parent) {
   QHBoxLayout* layout = new QHBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
   file_label = new QLabel(this);
+  file_label->setWordWrap(true);
   update_label();
   layout->addWidget(file_label);
   QPushButton* browse_button = new QPushButton("...", this);
@@ -48,6 +49,11 @@ void EmbeddedFileChooser::setFilename(const QString &s) {
   emit changed(filename);
 }
 
+void EmbeddedFileChooser::setError(const QString &e) {
+  error = e;
+  update_label();
+}
+
 void EmbeddedFileChooser::update_label() {
   QString l = "<html>" + tr("File:") + " ";
   if (filename.isEmpty()) {
@@ -62,6 +68,9 @@ void EmbeddedFileChooser::update_label() {
       l += short_fn;
     }
     if (!file_exists) l += "</font>";
+  }
+  if (!error.isEmpty()) {
+    l += "<br><font color='red'>" + error.toHtmlEscaped() + "</font>";
   }
   l += "</html>";
   file_label->setText(l);

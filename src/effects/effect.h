@@ -265,7 +265,10 @@ class Effect : public QObject {
   void SetExpanded(bool e);
  signals:
   void EnabledChanged(bool);
+  // Emitted after a LUT file is (re)loaded; empty error means it loaded fine.
+  void LutStatusChanged(const QString& error);
  public slots:
+  void SetLutStatus(const QString& error);
   void delete_self();
   void move_up();
   void move_down();
