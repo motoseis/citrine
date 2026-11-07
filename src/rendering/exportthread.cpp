@@ -98,19 +98,9 @@ AVPixelFormat FirstTenBitPixFmt(const AVCodec* codec) {
   return fallback;
 }
 
-// Hash of a pixel index, uniform in [0, 1)
-static float dither_noise(quint32 n) {
-  n ^= n >> 16;
-  n *= 0x7feb352dU;
-  n ^= n >> 15;
-  n *= 0x846ca68bU;
-  n ^= n >> 16;
-  return float(n & 0xFFFFFFU) / float(0x1000000U);
-}
-
 // The 16-bit render target reads back as half-float RGBA. Rewrite each channel in place as an unsigned
-// 16-bit value (0-65535) so swscale can read the frame as RGBA64. Half an 8-bit step of noise is added first,
-// so an 8-bit source's steps become a dithered transition in the 10-bit output instead of hard bands.
+// 16-bit value (0-65535) so swscale can read the frame as RGBA64. No noise is added here: 8-bit sources are
+// dithered where they are decoded (yuv2rgb.frag), so the rest of the frame is not grained.
 //
 // Converting each half float in software is the slow part of this loop, so every 16-bit pattern is
 // converted once into a table. The table holds the same float values, so the output is unchanged.
@@ -135,8 +125,7 @@ static void convert_rows(AVFrame* frame, int y0, int y1) {
   for (int y = y0; y < y1; y++) {
     quint16* row = reinterpret_cast<quint16*>(frame->data[0] + y * frame->linesize[0]);
     for (int i = 0; i < frame->width * channels; i++) {
-      float noise = dither_noise(quint32(y) * quint32(frame->width * channels) + quint32(i)) - 0.5f;
-      float value = qBound(0.0f, half_to_float[row[i]] + noise / 255.0f, 1.0f);
+      float value = qBound(0.0f, half_to_float[row[i]], 1.0f);
       row[i] = quint16(value * 65535.0f + 0.5f);
     }
   }

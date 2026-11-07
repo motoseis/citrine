@@ -13,6 +13,13 @@ layout(binding = 4) uniform sampler2D v_tex;
 layout(location = 0) in vec2 vTexCoord;
 layout(location = 0) out vec4 fragColor;
 
+// Hash of the pixel position, uniform in [0, 1)
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
 void main() {
     // 10-bit formats are uploaded to 16-bit textures, which sample as code/65535. Rescale so that a
     // sample reads as code/1023 either way. P010 keeps its 10 bits in the top bits (code << 6), so it
@@ -70,5 +77,12 @@ void main() {
                            0.0, 0.0, c_scale);
     }
     vec3 rgb = clamp(conv * yuv, 0.0, 1.0);
+
+    // An 8-bit source only has steps of 1/255. Half a step of noise turns those steps into a dithered
+    // transition in the float composite, so smooth areas do not band in a 10-bit export. 10-bit sources have
+    // steps far finer than that, so they are left alone.
+    if (!ten_bit) {
+        rgb = clamp(rgb + (hash12(gl_FragCoord.xy) - 0.5) / 255.0, 0.0, 1.0);
+    }
     fragColor = vec4(rgb, 1.0);
 }
