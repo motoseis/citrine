@@ -142,3 +142,19 @@ v2.0: 261105
 	   output stayed near 10 Mbps. The default for NVIDIA H.265 is now 23 (was 28).
 	4. Pressing Return in the export settings no longer unticks the Video section, which could make the export
 	   audio-only. Return also no longer starts or cancels the export; use the buttons instead.
+
+v2.0: 261107
+	1. Variable bitrate export for H.264 and H.265. "Variable Bitrate (target)" sets an average bitrate, and
+	   peaks can reach 1.5 times the target. NVIDIA and VAAPI use their own variable-bitrate modes. Quality-based
+	   export is unchanged.
+	2. Faster export. Frames are now averaged down to the export size on the GPU before they are read back, so a
+	   4K sequence exported at 1080p no longer does its conversion work at 4K. A 4K to 1080p 10-bit export runs
+	   about four times faster. The downscale averages the source pixels each output pixel covers, so it does not
+	   alias. Output may look slightly different from before.
+	3. Dither is applied per clip. 8-bit sources (for example phone footage) get half a step of noise where they
+	   are decoded, so smooth gradients do not band in a 10-bit export. 10-bit camera footage is no longer
+	   grained by the export. Clips that go through CPU effects such as Frei0r are not dithered by this change.
+	4. The About dialog title reads "About Citrine". Release builds show the version they were built with
+	   (for example 2.0-pre2), set with -DCITRINE_VERSION.
+	5. Export timing is logged every 30 frames (wait, convert, scale, encode, and the time each conversion
+	   thread spent), together with the export frame size, to help find slow exports.
