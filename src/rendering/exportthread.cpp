@@ -704,6 +704,14 @@ struct ExportPhaseTimes {
   int frames = 0;
 };
 
+// Returns the microseconds since the last call and restarts the timer. QElapsedTimer::restart() returns milliseconds,
+// so the sub-millisecond part is read from nsecsElapsed() first.
+static qint64 lap_us(QElapsedTimer& timer) {
+  const qint64 us = timer.nsecsElapsed() / 1000;
+  timer.restart();
+  return us;
+}
+
 // Logs the average time per frame for each step every kPhaseLogInterval frames, then starts a new window
 static const int kPhaseLogInterval = 30;
 static void log_phase_times(ExportPhaseTimes& times) {
@@ -836,7 +844,7 @@ bool ExportThread::Export()
       if (video_10bit_) {
         half_float_to_unorm16(video_frame);
       }
-      phase_times.convert_us += phase_timer.restart() / 1000;
+      phase_times.convert_us += lap_us(phase_timer);
 
       // Construct destination pixel format frame
       sws_frame = av_frame_alloc();
@@ -851,7 +859,7 @@ bool ExportThread::Export()
       } else {
         sws_scale(sws_ctx, video_frame->data, video_frame->linesize, 0, video_frame->height, sws_frame->data, sws_frame->linesize);
       }
-      phase_times.scale_us += phase_timer.restart() / 1000;
+      phase_times.scale_us += lap_us(phase_timer);
       sws_frame->pts = qRound(timecode_secs/av_q2d(vcodec_ctx->time_base));
 
       // VAAPI encoders need the frame copied into a GPU surface first
@@ -876,7 +884,7 @@ bool ExportThread::Export()
       if (encode_frame != sws_frame) av_frame_free(&encode_frame);
       av_frame_free(&sws_frame);
       sws_frame = nullptr;
-      phase_times.encode_us += phase_timer.restart() / 1000;
+      phase_times.encode_us += lap_us(phase_timer);
       if (!encoded) {
         frames_ok = false;
         goto cleanup_renderer;
@@ -948,7 +956,7 @@ bool ExportThread::Export()
     if (render_next) {
       phase_timer.restart();
       int status = wait_for_render(renderer);
-      phase_times.wait_us += phase_timer.restart() / 1000;
+      phase_times.wait_us += lap_us(phase_timer);
       if (status == 0 && renderer->did_texture_fail()) {
         // The RenderThread failed. The playhead is already on the next frame, so render it again.
         status = render_frame_sync(renderer, video_frame_alt);
