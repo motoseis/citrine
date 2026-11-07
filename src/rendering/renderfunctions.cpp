@@ -349,6 +349,27 @@ void amber::rendering::resolve_to_8bit(ComposeSequenceParams& params, QRhiTextur
            nullptr, true);
 }
 
+void amber::rendering::downscale_export(ComposeSequenceParams& params, QRhiTexture* src, QSize src_size,
+                                        QRhiTextureRenderTarget* dst, QRhiRenderPassDescriptor* rpd, QSize dst_size,
+                                        bool dither) {
+  // Taps per axis: one per source pixel in the footprint, rounded up, capped at the shader's loop limit of 8
+  const int taps_x = qBound(1, qCeil(float(src_size.width()) / float(dst_size.width())), 8);
+  const int taps_y = qBound(1, qCeil(float(src_size.height()) / float(dst_size.height())), 8);
+
+  const float data[8] = {
+      1.0f / float(dst_size.width()), 1.0f / float(dst_size.height()), float(taps_x), float(taps_y),
+      dither ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f,
+  };
+  QByteArray fragData(reinterpret_cast<const char*>(data), sizeof(data));
+
+  QMatrix4x4 mvp;
+  mvp.ortho(-1, 1, -1, 1, -1, 1);
+
+  // skipClipSpaceCorr keeps the image orientation, as in resolve_to_8bit
+  rhi_blit(params, dst, rpd, src, params.passthroughVert, params.downscaleFrag, mvp, fragData, int(sizeof(data)), 1,
+           nullptr, nullptr, true);
+}
+
 // Helper: create clip's ping-pong QRhiTexture + render target pairs (replaces QOpenGLFramebufferObject)
 static ClipRhiResources* get_or_create_clip_resources(Clip* c, QRhi* rhi, int width, int height) {
   if (!c) {

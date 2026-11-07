@@ -66,7 +66,9 @@ public:
                     int pixel_linesize = 0,
                     int idivider = 0,
                     bool scrubbing = false,
-                    bool half_float_pixels = false);
+                    bool half_float_pixels = false,
+                    int export_width = 0,
+                    int export_height = 0);
   bool did_texture_fail();
   // True once QRhi creation has failed. ready() is still emitted then, so a waiting ExportThread wakes up.
   bool rhi_failed() const;
@@ -106,6 +108,7 @@ private:
   QShader premultiplyFrag_;
   QShader yuvFrag_;
   QShader resolveFrag_;
+  QShader downscaleFrag_;
 
   QRhiSampler* sampler_{nullptr};
 
@@ -130,6 +133,16 @@ private:
   QRhiTextureRenderTarget* resolve_rt_{nullptr};
   QRhiRenderPassDescriptor* resolve_rpd_{nullptr};
 
+  // Export output target: the composite is averaged down to the export size on the GPU before readback.
+  // Sized to the export and recreated when the export size or the output format changes.
+  QRhiTexture* export_tex_{nullptr};
+  QRhiTextureRenderTarget* export_rt_{nullptr};
+  QRhiRenderPassDescriptor* export_rpd_{nullptr};
+  QSize export_tex_size_;
+  bool export_tex_8bit_{false};
+  void ensure_export_target(QSize size, bool eight_bit);
+  void delete_export_target();
+
   QWaitCondition wait_cond_;
   QMutex wait_lock_;
 
@@ -141,6 +154,7 @@ private:
   int tex_width{-1};
   int tex_height{-1};
   int divider_{1};
+  QSize export_size_;  // output size of the export in progress; invalid when not exporting
   QAtomicInt queued;
   bool texture_failed{false};
   bool scrubbing_{false};

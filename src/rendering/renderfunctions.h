@@ -72,6 +72,7 @@ struct ComposeSequenceParams {
   QShader premultiplyFrag;
   QShader yuvFrag;
   QShader resolveFrag;
+  QShader downscaleFrag;
 
   // Main compositing target (PreserveColorContents)
   QRhiTexture* main_tex;
@@ -96,6 +97,11 @@ QRhiTexture* compose_sequence(ComposeSequenceParams &params);
 // Draws src into dst (8-bit) with noise added, so a 16-bit float frame can be read back as RGBA8
 void resolve_to_8bit(ComposeSequenceParams& params, QRhiTexture* src, QRhiTextureRenderTarget* dst,
                      QRhiRenderPassDescriptor* rpd);
+
+// Averages src (src_size) down to dst (dst_size). Each output pixel takes evenly spaced taps across the source
+// pixels it covers, so the result does not alias. With dither, half an 8-bit step of noise is added (RGBA8 output).
+void downscale_export(ComposeSequenceParams& params, QRhiTexture* src, QSize src_size, QRhiTextureRenderTarget* dst,
+                      QRhiRenderPassDescriptor* rpd, QSize dst_size, bool dither);
 
 void compose_audio(Viewer* viewer, Sequence *seq, int playback_speed, bool wait_for_mutexes);
 }

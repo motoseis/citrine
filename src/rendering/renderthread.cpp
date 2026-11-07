@@ -206,6 +206,7 @@ void RenderThread::run() {
       premultiplyFrag_ = loadQsb(QStringLiteral(":/shaders/premultiply.frag.qsb"));
       yuvFrag_ = loadQsb(QStringLiteral(":/shaders/yuv2rgb.frag.qsb"));
       resolveFrag_ = loadQsb(QStringLiteral(":/shaders/resolve8.frag.qsb"));
+      downscaleFrag_ = loadQsb(QStringLiteral(":/shaders/downscale.frag.qsb"));
 
       // Sampler
       sampler_ = rhi_->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
@@ -342,6 +343,7 @@ void RenderThread::paint() {
   params.premultiplyFrag = premultiplyFrag_;
   params.yuvFrag = yuvFrag_;
   params.resolveFrag = resolveFrag_;
+  params.downscaleFrag = downscaleFrag_;
 
   params.main_tex = front_tex_[active_idx];
   params.main_target = front_rt_[active_idx];
@@ -360,7 +362,16 @@ void RenderThread::paint() {
   // A 16-bit export reads the float target as it is. Everything else reads the 8-bit copy made here (with dither)
   const bool export16 = pixel_buffer != nullptr && pixel_buffer_16bit;
   QRhiTexture* readback_tex = front_tex_[active_idx];
-  if (resolve_tex_ != nullptr && !export16) {
+  const QSize composite_size(tex_width, tex_height);
+  QSize frame_size = composite_size;  // size of the frame that is read back
+  if (pixel_buffer != nullptr && export_size_.isValid() && export_size_ != composite_size) {
+    // The export is a different size from the composite: average down on the GPU, so the readback is output-sized
+    ensure_export_target(export_size_, !export16);
+    amber::rendering::downscale_export(params, front_tex_[active_idx], composite_size, export_rt_, export_rpd_,
+                                       export_size_, !export16);
+    readback_tex = export_tex_;
+    frame_size = export_size_;
+  } else if (resolve_tex_ != nullptr && !export16) {
     amber::rendering::resolve_to_8bit(params, front_tex_[active_idx], resolve_rt_, resolve_rpd_);
     readback_tex = resolve_tex_;
   }
@@ -430,20 +441,20 @@ void RenderThread::paint() {
     QByteArray& data = export16 ? export_frame16_ : cpu_frame_[active_idx];
     if (!data.isEmpty()) {
       const int bytes_per_pixel = export16 ? 8 : 4;  // half-float RGBA or 8-bit RGBA
-      int copy_width = pixel_buffer_linesize == 0 ? tex_width : pixel_buffer_linesize;
+      int copy_width = pixel_buffer_linesize == 0 ? frame_size.width() : pixel_buffer_linesize;
       int row_bytes = copy_width * bytes_per_pixel;
-      int src_stride = tex_width * bytes_per_pixel;
+      int src_stride = frame_size.width() * bytes_per_pixel;
       if (row_bytes > src_stride) {
         // Per-row copy with padding zero-fill when destination has padding
         const char* src = data.constData();
         char* dst = static_cast<char*>(pixel_buffer);
-        for (int y = 0; y < tex_height; y++) {
+        for (int y = 0; y < frame_size.height(); y++) {
           char* dst_row = dst + static_cast<qsizetype>(y) * row_bytes;
           memcpy(dst_row, src + static_cast<qsizetype>(y) * src_stride, src_stride);
           memset(dst_row + src_stride, 0, row_bytes - src_stride);
         }
       } else {
-        int bytes = row_bytes * tex_height;
+        int bytes = row_bytes * frame_size.height();
         memcpy(pixel_buffer, data.constData(), qMin(bytes, int(data.size())));
       }
     }
@@ -459,7 +470,9 @@ void RenderThread::start_render(Sequence* s,
                                 int pixel_linesize,
                                 int idivider,
                                 bool scrubbing,
-                                bool half_float_pixels) {
+                                bool half_float_pixels,
+                                int export_width,
+                                int export_height) {
   // Apply preview resolution divider for playback (not export)
   if (pixels == nullptr) {
     divider_ = qMax(1, idivider);
@@ -496,6 +509,8 @@ void RenderThread::start_render(Sequence* s,
     pixel_buffer = pixels;
     pixel_buffer_linesize = pixel_linesize;
     pixel_buffer_16bit = half_float_pixels;
+    // Render at the output size, so the frame is not rendered at the sequence size and downscaled afterwards
+    export_size_ = (export_width > 0 && export_height > 0) ? QSize(export_width, export_height) : QSize();
   }
 
   queued = true;
@@ -552,6 +567,31 @@ void RenderThread::delete_buffers() {
   resolve_tex_ = nullptr;
   delete resolve_rpd_;
   resolve_rpd_ = nullptr;
+  delete_export_target();
+}
+
+void RenderThread::delete_export_target() {
+  delete export_rt_;
+  export_rt_ = nullptr;
+  delete export_tex_;
+  export_tex_ = nullptr;
+  delete export_rpd_;
+  export_rpd_ = nullptr;
+  export_tex_size_ = QSize();
+}
+
+void RenderThread::ensure_export_target(QSize size, bool eight_bit) {
+  if (export_tex_ != nullptr && export_tex_size_ == size && export_tex_8bit_ == eight_bit) return;
+  delete_export_target();
+  const QRhiTexture::Format format = eight_bit ? QRhiTexture::RGBA8 : IntermediateFormat();
+  export_tex_ = rhi_->newTexture(format, size, 1, QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource);
+  export_tex_->create();
+  export_rt_ = rhi_->newTextureRenderTarget({export_tex_});
+  export_rpd_ = export_rt_->newCompatibleRenderPassDescriptor();
+  export_rt_->setRenderPassDescriptor(export_rpd_);
+  export_rt_->create();
+  export_tex_size_ = size;
+  export_tex_8bit_ = eight_bit;
 }
 
 void RenderThread::delete_ctx() {

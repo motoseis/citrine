@@ -610,6 +610,7 @@ qt_add_shaders(${OLIVE_TARGET} "citrine_shaders"
     rendering/shaders/blending.frag
     rendering/shaders/premultiply.frag
     rendering/shaders/resolve8.frag
+    rendering/shaders/downscale.frag
 )
 
 set(EFFECTS_STAMP ${CMAKE_CURRENT_BINARY_DIR}/effects_stamp)

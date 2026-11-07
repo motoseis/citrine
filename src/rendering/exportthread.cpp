@@ -442,8 +442,9 @@ bool ExportThread::SetupVideo() {
   }
   video_frame = av_frame_alloc();
   video_frame->format = video_10bit_ ? AV_PIX_FMT_RGBA64LE : AV_PIX_FMT_RGBA;
-  video_frame->width = amber::ActiveSequence->width;
-  video_frame->height = amber::ActiveSequence->height;
+  // Frames are rendered at the output size, so they are not rendered at the sequence size and downscaled later
+  video_frame->width = params_.video_width;
+  video_frame->height = params_.video_height;
   ret = av_frame_get_buffer(video_frame, 0);
   if (ret < 0) {
     qCritical() << "Could not allocate video frame buffer." << ret;
@@ -466,8 +467,8 @@ bool ExportThread::SetupVideo() {
 
   // Set up conversion context
   sws_ctx = sws_getContext(
-        amber::ActiveSequence->width,
-        amber::ActiveSequence->height,
+        params_.video_width,
+        params_.video_height,
         video_10bit_ ? AV_PIX_FMT_RGBA64LE : AV_PIX_FMT_RGBA,
         params_.video_width,
         params_.video_height,
@@ -481,9 +482,7 @@ bool ExportThread::SetupVideo() {
   // 10-bit output from a sequence at the export size is converted in bands on several threads
   const int height = params_.video_height;
   const int threads = qBound(1, static_cast<int>(std::thread::hardware_concurrency()), 8);
-  if (video_10bit_ && sw_pix_fmt == AV_PIX_FMT_P010LE && amber::ActiveSequence->width == params_.video_width &&
-      height == amber::ActiveSequence->height && height % 2 == 0 && threads > 1 &&
-      height >= threads * 64) {
+  if (video_10bit_ && sw_pix_fmt == AV_PIX_FMT_P010LE && height % 2 == 0 && threads > 1 && height >= threads * 64) {
     bool ok = true;
     for (int k = 0; k < threads && ok; k++) {
       ExportSwsBand b;
@@ -1197,7 +1196,8 @@ void ExportThread::play_wake()
 void ExportThread::start_video_render(RenderThread* renderer, AVFrame* buf) {
   render_complete_ = false;
   renderer->start_render(amber::ActiveSequence.get(), 1, nullptr, buf->data[0],
-                         buf->linesize[0] / (video_10bit_ ? 8 : 4), 0, false, video_10bit_);
+                         buf->linesize[0] / (video_10bit_ ? 8 : 4), 0, false, video_10bit_,
+                         params_.video_width, params_.video_height);
 }
 
 int ExportThread::wait_for_render(RenderThread* renderer) {
