@@ -31,6 +31,7 @@ extern "C" {
 
 #include <QApplication>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFloat16>
 #include <QPainter>
@@ -694,6 +695,30 @@ bool ExportThread::SetupContainer() {
 
 // Returns true only when the file was fully written. False on any failure and on interrupt (an interrupt does not
 // set export_error, so export_error alone can't tell).
+// Time spent on each video step since the last log line, in microseconds. Used to find the export bottleneck.
+struct ExportPhaseTimes {
+  qint64 wait_us = 0;     // waiting for the GPU to finish the next frame
+  qint64 convert_us = 0;  // 10-bit half-float to 16-bit conversion on the CPU
+  qint64 scale_us = 0;    // swscale to the encoder's pixel format
+  qint64 encode_us = 0;   // encoder call, including the VAAPI upload when used
+  int frames = 0;
+};
+
+// Logs the average time per frame for each step every kPhaseLogInterval frames, then starts a new window
+static const int kPhaseLogInterval = 30;
+static void log_phase_times(ExportPhaseTimes& times) {
+  if (++times.frames < kPhaseLogInterval) return;
+  const double n = double(times.frames) * 1000.0;
+  qInfo().noquote() << QString("Export timing, average ms per frame over %1 frames: "
+                               "wait %2, convert %3, scale %4, encode %5")
+                           .arg(times.frames)
+                           .arg(times.wait_us / n, 0, 'f', 2)
+                           .arg(times.convert_us / n, 0, 'f', 2)
+                           .arg(times.scale_us / n, 0, 'f', 2)
+                           .arg(times.encode_us / n, 0, 'f', 2);
+  times = ExportPhaseTimes();
+}
+
 bool ExportThread::Export()
 {
   // Copy filename from QString to const char
@@ -735,6 +760,10 @@ bool ExportThread::Export()
 
   // Frame counters - used for generating encoding statistics (e.g. average frame time, ETA, etc.)
   long remaining_frames, frame_count = 1;
+
+  // Per-step timing for the export log (see log_phase_times)
+  ExportPhaseTimes phase_times;
+  QElapsedTimer phase_timer;
 
   // Set to false when a frame can't be produced or encoded: the file is then incomplete and must not be finalized
   bool frames_ok = true;
@@ -803,9 +832,11 @@ bool ExportThread::Export()
       //
 
       // The 16-bit target reads back as half floats; turn them into 16-bit integers for swscale
+      phase_timer.restart();
       if (video_10bit_) {
         half_float_to_unorm16(video_frame);
       }
+      phase_times.convert_us += phase_timer.restart() / 1000;
 
       // Construct destination pixel format frame
       sws_frame = av_frame_alloc();
@@ -820,6 +851,7 @@ bool ExportThread::Export()
       } else {
         sws_scale(sws_ctx, video_frame->data, video_frame->linesize, 0, video_frame->height, sws_frame->data, sws_frame->linesize);
       }
+      phase_times.scale_us += phase_timer.restart() / 1000;
       sws_frame->pts = qRound(timecode_secs/av_q2d(vcodec_ctx->time_base));
 
       // VAAPI encoders need the frame copied into a GPU surface first
@@ -844,6 +876,7 @@ bool ExportThread::Export()
       if (encode_frame != sws_frame) av_frame_free(&encode_frame);
       av_frame_free(&sws_frame);
       sws_frame = nullptr;
+      phase_times.encode_us += phase_timer.restart() / 1000;
       if (!encoded) {
         frames_ok = false;
         goto cleanup_renderer;
@@ -913,7 +946,9 @@ bool ExportThread::Export()
 
     // The next frame has been rendering during this frame's encode. Wait for it, then swap it in as the current frame.
     if (render_next) {
+      phase_timer.restart();
       int status = wait_for_render(renderer);
+      phase_times.wait_us += phase_timer.restart() / 1000;
       if (status == 0 && renderer->did_texture_fail()) {
         // The RenderThread failed. The playhead is already on the next frame, so render it again.
         status = render_frame_sync(renderer, video_frame_alt);
@@ -933,6 +968,7 @@ bool ExportThread::Export()
 
     // Increment frame count (used for generating encoding statistics above)
     frame_count++;
+    log_phase_times(phase_times);
   }
 
 cleanup_renderer:
