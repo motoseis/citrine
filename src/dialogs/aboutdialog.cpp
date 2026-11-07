@@ -31,7 +31,7 @@
 #include "global/global.h"
 
 AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent) {
-  setWindowTitle("About Amber");
+  setWindowTitle("About Citrine");
   setMinimumWidth(420);
   setSizeGripEnabled(true);
 
