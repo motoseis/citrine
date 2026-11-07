@@ -698,6 +698,7 @@ void ExportDialog::vcodec_changed(int index) {
     if (vcodecCombobox->itemData(index) == AV_CODEC_ID_H264 || vcodecCombobox->itemData(index) == AV_CODEC_ID_H265) {
       compressionTypeCombobox->setEnabled(true);
       compressionTypeCombobox->addItem(tr("Quality-based (Constant Rate Factor)"), COMPRESSION_TYPE_CFR);
+      compressionTypeCombobox->addItem(tr("Variable Bitrate (target)"), COMPRESSION_TYPE_VBR);
       //		compressionTypeCombobox->addItem("File size-based (Two-Pass)", COMPRESSION_TYPE_TARGETSIZE);
       //		compressionTypeCombobox->addItem("Average bitrate (Two-Pass)", COMPRESSION_TYPE_TARGETBR);
     } else {
@@ -745,6 +746,17 @@ void ExportDialog::comp_type_changed(int) {
     case COMPRESSION_TYPE_CBR:
     case COMPRESSION_TYPE_TARGETBR:
       videoBitrateLabel->setText(tr("Bitrate (Mbps):"));
+      videobitrateSpinbox->setValue(qMax(0.5, (double)qRound((0.01528 * amber::ActiveSequence->height) - 4.5)));
+      break;
+    case COMPRESSION_TYPE_VBR:
+      videoBitrateLabel->setText(tr("Target Bitrate (Mbps):"));
+      videoQualityHelpLabel->setText(
+          tr("The file aims for this average bitrate. Peaks can reach %1 times the target.").arg(VBR_PEAK_RATIO));
+      videoQualityHelpLabel->setVisible(true);
+      videobitrateSpinbox->setToolTip(
+          tr("Average target bitrate in Mbps. Complex scenes can use up to %1 times this value, and simple scenes "
+             "use less, so the file size is more predictable than quality-based export.")
+              .arg(VBR_PEAK_RATIO));
       videobitrateSpinbox->setValue(qMax(0.5, (double)qRound((0.01528 * amber::ActiveSequence->height) - 4.5)));
       break;
     case COMPRESSION_TYPE_CFR: {

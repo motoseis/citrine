@@ -295,8 +295,14 @@ bool ExportThread::SetupVideo() {
   sw_pix_fmt = vaapi ? (video_10bit_ ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12) : encoder_pix_fmt;
   vcodec_ctx->pix_fmt = vaapi ? AV_PIX_FMT_VAAPI : sw_pix_fmt;
   vcodec_ctx->framerate = av_d2q(params_.video_frame_rate, INT_MAX);
-  if (params_.video_compression_type == COMPRESSION_TYPE_CBR) {
+  if (params_.video_compression_type == COMPRESSION_TYPE_CBR ||
+      params_.video_compression_type == COMPRESSION_TYPE_VBR) {
     vcodec_ctx->bit_rate = qRound(params_.video_bitrate * 1000000);
+  }
+  if (params_.video_compression_type == COMPRESSION_TYPE_VBR) {
+    // Peaks are capped at VBR_PEAK_RATIO times the target; the buffer holds two seconds of target bitrate
+    vcodec_ctx->rc_max_rate = qRound(params_.video_bitrate * 1000000 * VBR_PEAK_RATIO);
+    vcodec_ctx->rc_buffer_size = qRound(params_.video_bitrate * 1000000 * 2);
   }
   vcodec_ctx->time_base = av_inv_q(vcodec_ctx->framerate);
 
@@ -337,6 +343,14 @@ bool ExportThread::SetupVideo() {
         av_opt_set(vcodec_ctx->priv_data, "qp", QString::number(static_cast<int>(params_.video_bitrate)).toUtf8(), AV_OPT_SEARCH_CHILDREN);
       } else {
         av_opt_set(vcodec_ctx->priv_data, "crf", QString::number(static_cast<int>(params_.video_bitrate)).toUtf8(), AV_OPT_SEARCH_CHILDREN);
+      }
+      break;
+    case COMPRESSION_TYPE_VBR:
+      // The target and peak ceiling are already set above; NVENC and VAAPI need their rate control switched to VBR
+      if (params_.video_encoder.endsWith("_nvenc")) {
+        av_opt_set(vcodec_ctx->priv_data, "rc", "vbr", AV_OPT_SEARCH_CHILDREN);
+      } else if (vaapi) {
+        av_opt_set(vcodec_ctx->priv_data, "rc_mode", "VBR", AV_OPT_SEARCH_CHILDREN);
       }
       break;
     }

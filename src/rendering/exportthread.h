@@ -54,6 +54,9 @@ extern "C" {
 #define COMPRESSION_TYPE_CFR 1
 #define COMPRESSION_TYPE_TARGETSIZE 2
 #define COMPRESSION_TYPE_TARGETBR 3
+// Variable bitrate: the bitrate field is the average target and peaks reach VBR_PEAK_RATIO times that value
+#define COMPRESSION_TYPE_VBR 4
+#define VBR_PEAK_RATIO 1.5
 
 // structs that store parameters passed from the export dialogs to this thread
 
