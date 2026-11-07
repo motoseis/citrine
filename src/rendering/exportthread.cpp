@@ -171,17 +171,32 @@ static void scale_bands(std::vector<ExportSwsBand>& bands, AVFrame* src, AVFrame
   }
 }
 
-static void half_float_to_unorm16(AVFrame* frame) {
-  const int threads = qBound(1, static_cast<int>(std::thread::hardware_concurrency()), 8);
+// Number of threads used for the 16-bit conversion
+static int conversion_threads() {
+  return qBound(1, static_cast<int>(std::thread::hardware_concurrency()), 8);
+}
+
+// If thread_us is given, it receives the microseconds each worker thread spent (index = thread number)
+static void half_float_to_unorm16(AVFrame* frame, std::vector<qint64>* thread_us = nullptr) {
+  const int threads = conversion_threads();
+  if (thread_us != nullptr) thread_us->assign(threads, 0);
   if (threads == 1 || frame->height < threads * 4) {
+    QElapsedTimer t;
+    t.start();
     convert_rows(frame, 0, frame->height);
+    if (thread_us != nullptr) (*thread_us)[0] = t.nsecsElapsed() / 1000;
     return;
   }
   std::vector<std::thread> workers;
   for (int k = 0; k < threads; k++) {
     int y0 = frame->height * k / threads;
     int y1 = frame->height * (k + 1) / threads;
-    workers.emplace_back(convert_rows, frame, y0, y1);
+    workers.emplace_back([frame, thread_us, k, y0, y1] {
+      QElapsedTimer t;
+      t.start();
+      convert_rows(frame, y0, y1);
+      if (thread_us != nullptr) (*thread_us)[k] = t.nsecsElapsed() / 1000;
+    });
   }
   for (auto& w : workers) w.join();
 }
@@ -701,7 +716,9 @@ struct ExportPhaseTimes {
   qint64 convert_us = 0;  // 10-bit half-float to 16-bit conversion on the CPU
   qint64 scale_us = 0;    // swscale to the encoder's pixel format
   qint64 encode_us = 0;   // encoder call, including the VAAPI upload when used
+  std::vector<qint64> convert_thread_us;  // time each conversion thread spent in the window
   int frames = 0;
+  bool logged_setup = false;  // the frame size and thread count are logged once per export
 };
 
 // Returns the microseconds since the last call and restarts the timer. QElapsedTimer::restart() returns milliseconds,
@@ -717,14 +734,19 @@ static const int kPhaseLogInterval = 30;
 static void log_phase_times(ExportPhaseTimes& times) {
   if (++times.frames < kPhaseLogInterval) return;
   const double n = double(times.frames) * 1000.0;
+  QString thread_text;
+  for (qint64 us : times.convert_thread_us) thread_text += QString(" %1").arg(us / n, 0, 'f', 2);
   qInfo().noquote() << QString("Export timing, average ms per frame over %1 frames: "
-                               "wait %2, convert %3, scale %4, encode %5")
+                               "wait %2, convert %3, scale %4, encode %5, convert threads:%6")
                            .arg(times.frames)
                            .arg(times.wait_us / n, 0, 'f', 2)
                            .arg(times.convert_us / n, 0, 'f', 2)
                            .arg(times.scale_us / n, 0, 'f', 2)
-                           .arg(times.encode_us / n, 0, 'f', 2);
+                           .arg(times.encode_us / n, 0, 'f', 2)
+                           .arg(thread_text);
+  const bool logged_setup = times.logged_setup;
   times = ExportPhaseTimes();
+  times.logged_setup = logged_setup;
 }
 
 bool ExportThread::Export()
@@ -840,9 +862,27 @@ bool ExportThread::Export()
       //
 
       // The 16-bit target reads back as half floats; turn them into 16-bit integers for swscale
+      if (!phase_times.logged_setup) {
+        phase_times.logged_setup = true;
+        qInfo().noquote() << QString("Export frame size %1x%2 (sequence %3x%4), 10-bit %5, conversion threads %6")
+                                 .arg(video_frame->width)
+                                 .arg(video_frame->height)
+                                 .arg(amber::ActiveSequence->width)
+                                 .arg(amber::ActiveSequence->height)
+                                 .arg(video_10bit_ ? "yes" : "no")
+                                 .arg(conversion_threads());
+      }
+
       phase_timer.restart();
       if (video_10bit_) {
-        half_float_to_unorm16(video_frame);
+        std::vector<qint64> frame_thread_us;
+        half_float_to_unorm16(video_frame, &frame_thread_us);
+        if (phase_times.convert_thread_us.size() < frame_thread_us.size()) {
+          phase_times.convert_thread_us.resize(frame_thread_us.size(), 0);
+        }
+        for (size_t k = 0; k < frame_thread_us.size(); k++) {
+          phase_times.convert_thread_us[k] += frame_thread_us[k];
+        }
       }
       phase_times.convert_us += lap_us(phase_timer);
 
