@@ -511,7 +511,7 @@ static QString GetFormatExtension(int format, int video_codec, bool has_video, b
       if (!has_video && has_audio) return QStringLiteral("m2a");
       return QStringLiteral("mpg");
     case FORMAT_MPEG4:
-      if (has_video && !has_audio) return QStringLiteral("m4v");
+      // ".m4v" selects ffmpeg's iPod muxer, which only accepts H.264 and rejects H.265 and 10-bit exports
       if (!has_video && has_audio) return QStringLiteral("m4a");
       return QStringLiteral("mp4");
     case FORMAT_MKV:
