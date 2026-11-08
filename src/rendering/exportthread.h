@@ -96,6 +96,8 @@ struct ExportPhaseTimes {
   qint64 convert_us = 0;  // 10-bit half-float to 16-bit conversion on the CPU
   qint64 scale_us = 0;    // swscale to the encoder's pixel format
   qint64 encode_us = 0;   // encoder call, including the VAAPI upload when used
+  qint64 start_us = 0;    // starting the next render (allocating its frame and handing it to the render thread)
+  qint64 loop_us = 0;     // the whole loop iteration, for comparing with the steps above
   std::vector<qint64> convert_thread_us;  // time each conversion thread spent in the window
   int frames = 0;
   bool logged_setup = false;  // the frame size and thread count are logged once per export
@@ -105,6 +107,8 @@ struct ExportPhaseTimes {
     convert_us += other.convert_us;
     scale_us += other.scale_us;
     encode_us += other.encode_us;
+    start_us += other.start_us;
+    loop_us += other.loop_us;
     frames += other.frames;
   }
 };

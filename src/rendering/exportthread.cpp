@@ -813,12 +813,14 @@ static void log_phase_times(ExportPhaseTimes& times, ExportPhaseTimes& totals) {
   QString thread_text;
   for (qint64 us : times.convert_thread_us) thread_text += QString(" %1").arg(us / n, 0, 'f', 2);
   qInfo().noquote() << QString("Export timing, average ms per frame over %1 frames: "
-                               "wait %2, convert %3, scale %4, encode %5, convert threads:%6")
+                               "wait %2, convert %3, scale %4, encode %5, start %6, loop %7, convert threads:%8")
                            .arg(times.frames)
                            .arg(times.wait_us / n, 0, 'f', 2)
                            .arg(times.convert_us / n, 0, 'f', 2)
                            .arg(times.scale_us / n, 0, 'f', 2)
                            .arg(times.encode_us / n, 0, 'f', 2)
+                           .arg(times.start_us / n, 0, 'f', 2)
+                           .arg(times.loop_us / n, 0, 'f', 2)
                            .arg(thread_text);
   totals.add(times);
   const bool logged_setup = times.logged_setup;
@@ -872,6 +874,7 @@ bool ExportThread::Export()
   // Per-step timing for the export log (see log_phase_times)
   ExportPhaseTimes phase_times;
   ExportPhaseTimes phase_totals;  // all frames, for the summary
+  QElapsedTimer iteration_timer;
   QElapsedTimer phase_timer;
 
   // Set to false when a frame can't be produced or encoded: the file is then incomplete and must not be finalized
@@ -921,7 +924,9 @@ bool ExportThread::Export()
     // reads the playhead when it runs.
     const bool render_next = params_.video_enabled && frame + 1 <= params_.end_frame;
     amber::ActiveSequence->playhead = frame + 1;
+    iteration_timer.restart();
     if (render_next) {
+      phase_timer.restart();
       if (yuv_direct_) {
         // A new frame each time, so the encoder never reads a buffer that the next render is writing into
         av_frame_free(&video_frame_alt);
@@ -933,6 +938,7 @@ bool ExportThread::Export()
         }
       }
       start_video_render(renderer, video_frame_alt);
+      phase_times.start_us += lap_us(phase_timer);
     }
 
     // Timecode of this frame in seconds (used for timestamp calculations later on)
@@ -1117,6 +1123,7 @@ bool ExportThread::Export()
 
     // Increment frame count (used for generating encoding statistics above)
     frame_count++;
+    phase_times.loop_us += iteration_timer.nsecsElapsed() / 1000;
     log_phase_times(phase_times, phase_totals);
   }
 
