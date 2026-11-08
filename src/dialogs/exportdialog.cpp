@@ -408,6 +408,14 @@ void ExportDialog::export_thread_finished() {
                           QMessageBox::Ok);
   }
 
+  // A finished export shows its summary: file, formats, encoders and decoders, and timings
+  if (succeeded && !export_thread_->GetSummary().isEmpty()) {
+    QMessageBox summary(QMessageBox::Information, tr("Export Complete"), export_thread_->GetSummary(), QMessageBox::Ok,
+                        this);
+    summary.setTextFormat(Qt::RichText);
+    summary.exec();
+  }
+
   // Restore rendering state on the main thread (ExportThread can't do this —
   // set_rendering_state(false) starts autorecovery_timer, a QTimer owned by
   // the main thread, which triggers "Timers cannot be started from another

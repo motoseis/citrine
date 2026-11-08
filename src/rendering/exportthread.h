@@ -90,6 +90,25 @@ struct VideoCodecParams {
 // The first 10-bit pixel format (9 to 12 bits per component) the encoder accepts, or AV_PIX_FMT_NONE if it has none
 AVPixelFormat FirstTenBitPixFmt(const AVCodec* codec);
 
+// Time spent on each video step, in microseconds, and the number of frames it covers
+struct ExportPhaseTimes {
+  qint64 wait_us = 0;     // waiting for the GPU to finish the next frame
+  qint64 convert_us = 0;  // 10-bit half-float to 16-bit conversion on the CPU
+  qint64 scale_us = 0;    // swscale to the encoder's pixel format
+  qint64 encode_us = 0;   // encoder call, including the VAAPI upload when used
+  std::vector<qint64> convert_thread_us;  // time each conversion thread spent in the window
+  int frames = 0;
+  bool logged_setup = false;  // the frame size and thread count are logged once per export
+
+  void add(const ExportPhaseTimes& other) {
+    wait_us += other.wait_us;
+    convert_us += other.convert_us;
+    scale_us += other.scale_us;
+    encode_us += other.encode_us;
+    frames += other.frames;
+  }
+};
+
 class ExportThread : public QThread {
   Q_OBJECT
 public:
@@ -101,6 +120,9 @@ public:
   void setGlFallbackSurface(QOffscreenSurface* surface);
 
   const QString& GetError();
+
+  // Text for the export summary dialog, set when the export completes successfully (empty otherwise)
+  const QString& GetSummary() const;
 
   bool WasInterrupted();
 signals:
@@ -140,6 +162,9 @@ private:
   bool video_10bit_{false};
   // The GPU writes the 10-bit 4:2:0 planes and the frame is encoded as rendered (no swscale)
   bool yuv_direct_{false};
+  QString summary_;
+  qint64 export_start_ms_{0};
+  QString BuildSummary(const ExportPhaseTimes& totals, qint64 elapsed_ms) const;
   AVBufferRef* hw_device_ctx{nullptr};
   AVBufferRef* hw_frames_ctx{nullptr};
   AVStream* audio_stream{nullptr};

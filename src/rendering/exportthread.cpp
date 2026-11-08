@@ -213,6 +213,88 @@ ExportThread::ExportThread(const ExportParams &params,
 {
 }
 
+const QString& ExportThread::GetSummary() const {
+  return summary_;
+}
+
+// Describes the finished export: file, formats, the encoders and decoders used, and where the time went
+QString ExportThread::BuildSummary(const ExportPhaseTimes& totals, qint64 elapsed_ms) const {
+  const double frames = std::max(1, totals.frames);
+  const double elapsed_s = elapsed_ms / 1000.0;
+  auto per_frame_ms = [frames](qint64 us) { return QString::number(us / 1000.0 / frames, 'f', 2); };
+  const QString rows_sep = QStringLiteral("<br>");
+
+  QStringList lines;
+  lines << QStringLiteral("<b>File:</b> %1").arg(params_.filename.toHtmlEscaped());
+  lines << QStringLiteral("<b>Container:</b> %1").arg(QString::fromUtf8(fmt_ctx->oformat->long_name));
+
+  if (params_.video_enabled) {
+    QString rate;
+    switch (params_.video_compression_type) {
+      case COMPRESSION_TYPE_VBR:
+        rate = QStringLiteral("variable bitrate, target %1 Mbps, peaks %2 Mbps")
+                   .arg(params_.video_bitrate, 0, 'f', 2)
+                   .arg(params_.video_bitrate * VBR_PEAK_RATIO, 0, 'f', 2);
+        break;
+      case COMPRESSION_TYPE_CBR:
+        rate = QStringLiteral("constant bitrate %1 Mbps").arg(params_.video_bitrate, 0, 'f', 2);
+        break;
+      default:
+        rate = QStringLiteral("constant quality %1").arg(static_cast<int>(params_.video_bitrate));
+        break;
+    }
+    const bool resized = amber::ActiveSequence != nullptr && (amber::ActiveSequence->width != params_.video_width ||
+                                                               amber::ActiveSequence->height != params_.video_height);
+    QString render;
+    if (yuv_direct_) {
+      render = resized ? QStringLiteral("GPU downscales, then writes the YUV planes")
+                       : QStringLiteral("GPU writes the YUV planes");
+    } else {
+      render = resized ? QStringLiteral("GPU downscales, then swscale converts to the encoder format")
+                       : QStringLiteral("GPU renders RGB, swscale converts to the encoder format");
+    }
+    lines << QStringLiteral("<b>Video:</b> %1x%2, %3 fps, %4 (%5), %6 %7")
+                 .arg(params_.video_width)
+                 .arg(params_.video_height)
+                 .arg(params_.video_frame_rate, 0, 'f', 3)
+                 .arg(QString::fromUtf8(vcodec_ctx->codec->name))
+                 .arg(QString::fromUtf8(vcodec_ctx->codec->long_name))
+                 .arg(QString::fromUtf8(av_get_pix_fmt_name(sw_pix_fmt)))
+                 .arg(video_10bit_ ? QStringLiteral("10-bit") : QStringLiteral("8-bit"));
+    lines << QStringLiteral("<b>Rate control:</b> %1").arg(rate);
+    lines << QStringLiteral("<b>Render path:</b> %1").arg(render);
+    lines << QStringLiteral("<b>Decoding:</b> software (FFmpeg), original footage; "
+                            "hardware decoding is not used during export");
+  } else {
+    lines << QStringLiteral("<b>Video:</b> none");
+  }
+
+  if (params_.audio_enabled && acodec_ctx != nullptr) {
+    lines << QStringLiteral("<b>Audio:</b> %1, %2 Hz, %3 kbps")
+                 .arg(QString::fromUtf8(acodec_ctx->codec->name))
+                 .arg(params_.audio_sampling_rate)
+                 .arg(params_.audio_bitrate);
+  } else {
+    lines << QStringLiteral("<b>Audio:</b> none");
+  }
+
+  const int total_s = qRound(elapsed_s);
+  const QString duration = total_s >= 60 ? QStringLiteral("%1 min %2 s").arg(total_s / 60).arg(total_s % 60)
+                                         : QStringLiteral("%1 s").arg(elapsed_s, 0, 'f', 1);
+  lines << QStringLiteral("<b>Export time:</b> %1 for %2 frames (%3 fps overall)")
+               .arg(duration)
+               .arg(totals.frames)
+               .arg(frames / std::max(elapsed_s, 0.001), 0, 'f', 1);
+  lines << QStringLiteral("<b>Average per frame (ms):</b> total %1, wait %2, convert %3, scale %4, encode %5")
+               .arg(QString::number(elapsed_ms / frames, 'f', 2))
+               .arg(per_frame_ms(totals.wait_us))
+               .arg(per_frame_ms(totals.convert_us))
+               .arg(per_frame_ms(totals.scale_us))
+               .arg(per_frame_ms(totals.encode_us));
+
+  return lines.join(rows_sep);
+}
+
 void ExportThread::setGlFallbackSurface(QOffscreenSurface* surface) {
   gl_fallback_surface_ = surface;
 }
@@ -715,17 +797,6 @@ bool ExportThread::SetupContainer() {
 
 // Returns true only when the file was fully written. False on any failure and on interrupt (an interrupt does not
 // set export_error, so export_error alone can't tell).
-// Time spent on each video step since the last log line, in microseconds. Used to find the export bottleneck.
-struct ExportPhaseTimes {
-  qint64 wait_us = 0;     // waiting for the GPU to finish the next frame
-  qint64 convert_us = 0;  // 10-bit half-float to 16-bit conversion on the CPU
-  qint64 scale_us = 0;    // swscale to the encoder's pixel format
-  qint64 encode_us = 0;   // encoder call, including the VAAPI upload when used
-  std::vector<qint64> convert_thread_us;  // time each conversion thread spent in the window
-  int frames = 0;
-  bool logged_setup = false;  // the frame size and thread count are logged once per export
-};
-
 // Returns the microseconds since the last call and restarts the timer. QElapsedTimer::restart() returns milliseconds,
 // so the sub-millisecond part is read from nsecsElapsed() first.
 static qint64 lap_us(QElapsedTimer& timer) {
@@ -736,7 +807,7 @@ static qint64 lap_us(QElapsedTimer& timer) {
 
 // Logs the average time per frame for each step every kPhaseLogInterval frames, then starts a new window
 static const int kPhaseLogInterval = 30;
-static void log_phase_times(ExportPhaseTimes& times) {
+static void log_phase_times(ExportPhaseTimes& times, ExportPhaseTimes& totals) {
   if (++times.frames < kPhaseLogInterval) return;
   const double n = double(times.frames) * 1000.0;
   QString thread_text;
@@ -749,6 +820,7 @@ static void log_phase_times(ExportPhaseTimes& times) {
                            .arg(times.scale_us / n, 0, 'f', 2)
                            .arg(times.encode_us / n, 0, 'f', 2)
                            .arg(thread_text);
+  totals.add(times);
   const bool logged_setup = times.logged_setup;
   times = ExportPhaseTimes();
   times.logged_setup = logged_setup;
@@ -757,6 +829,7 @@ static void log_phase_times(ExportPhaseTimes& times) {
 bool ExportThread::Export()
 {
   // Copy filename from QString to const char
+  export_start_ms_ = QDateTime::currentMSecsSinceEpoch();
   QByteArray ba = params_.filename.toUtf8();
   c_filename = qstrdup(ba.constData());
 
@@ -798,6 +871,7 @@ bool ExportThread::Export()
 
   // Per-step timing for the export log (see log_phase_times)
   ExportPhaseTimes phase_times;
+  ExportPhaseTimes phase_totals;  // all frames, for the summary
   QElapsedTimer phase_timer;
 
   // Set to false when a frame can't be produced or encoded: the file is then incomplete and must not be finalized
@@ -1043,7 +1117,7 @@ bool ExportThread::Export()
 
     // Increment frame count (used for generating encoding statistics above)
     frame_count++;
-    log_phase_times(phase_times);
+    log_phase_times(phase_times, phase_totals);
   }
 
 cleanup_renderer:
@@ -1097,6 +1171,10 @@ cleanup_state:
     export_error = tr("could not write output file trailer (%1)").arg(QString::number(ret));
     return false;
   }
+
+  // Summary for the dialog shown when the export finishes
+  phase_totals.add(phase_times);
+  summary_ = BuildSummary(phase_totals, QDateTime::currentMSecsSinceEpoch() - export_start_ms_);
 
   emit ProgressChanged(100, 0);
   return true;
