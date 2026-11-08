@@ -158,3 +158,19 @@ v2.0: 261107
 	   (for example 2.0-pre2), set with -DCITRINE_VERSION.
 	5. Export timing is logged every 30 frames (wait, convert, scale, encode, and the time each conversion
 	   thread spent), together with the export frame size, to help find slow exports.
+
+v2.0: 261108
+	1. 10-bit export is faster. For NVIDIA H.265 and for the software 10-bit H.264 and H.265 encoders (not VAAPI), the GPU
+	   writes the 4:2:0 luma and chroma planes and only those are read back, so the CPU no longer converts or scales each frame.
+	   A 4K 10-bit H.265 export on NVIDIA runs at about 44 fps (it was about 10 fps). The output is 10-bit 4:2:0 with BT.601
+	   limited range, the same as before.
+	2. A summary popup appears when an export finishes. It shows the output file, container, encoders and pixel format,
+	   rate control, render path, decoding, audio, and the export time with average per-frame timings. It is not shown for
+	   cancelled or failed exports.
+	3. The export progress bar's time remaining is measured over the whole frame, including the wait for the GPU, so it
+	   no longer finishes early.
+	4. Video-only MPEG-4 exports use the .mp4 extension. The .m4v extension selects a muxer that only accepts H.264, so
+	   H.265 exports failed with "Could not write output file header" (-22).
+	5. The export timing log also shows the render start time and the whole loop time per frame.
+	6. Export with hardware decoding off: exports already decode in software, so the Hardware Decoding preference only
+	   affects timeline playback and proxy generation.
