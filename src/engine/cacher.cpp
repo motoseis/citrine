@@ -43,6 +43,16 @@
 const AVPixelFormat kDestPixFmt = AV_PIX_FMT_RGBA;
 const AVSampleFormat kDestSampleFmt = AV_SAMPLE_FMT_S16;
 
+// True if the decoder can use a hardware device of the given type (e.g. ProRes has none, so creating a CUDA or
+// VAAPI device for it would only cost setup time).
+static bool codec_supports_hw_device(const AVCodec* codec, AVHWDeviceType type) {
+  for (int i = 0;; i++) {
+    const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+    if (config == nullptr) return false;
+    if (config->device_type == type && (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)) return true;
+  }
+}
+
 void Cacher::SetRetrievedFrame(AVFrame *f)
 {
   retrieve_lock_.lock();
@@ -176,7 +186,10 @@ bool Cacher::openWorkerOpenCodec(Footage* m, const FootageStream* ms) {
       AV_HWDEVICE_TYPE_NONE
     };
 
+    bool codec_has_hw = false;
     for (int i = 0; hw_types[i] != AV_HWDEVICE_TYPE_NONE; i++) {
+      if (!codec_supports_hw_device(codec, hw_types[i])) continue;
+      codec_has_hw = true;
       if (av_hwdevice_ctx_create(&hw_device_ctx, hw_types[i], nullptr, nullptr, 0) == 0) {
         codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
         qInfo() << "Hardware decoding enabled:" << av_hwdevice_get_type_name(hw_types[i]);
@@ -184,7 +197,11 @@ bool Cacher::openWorkerOpenCodec(Footage* m, const FootageStream* ms) {
       }
     }
     if (hw_device_ctx == nullptr) {
-      qInfo() << "Hardware decoding unavailable, falling back to software";
+      if (codec_has_hw) {
+        qInfo() << "Hardware decoding unavailable, falling back to software";
+      } else {
+        qInfo() << "No hardware decoder for codec" << avcodec_get_name(codec->id) << ", using software";
+      }
     }
   }
 
