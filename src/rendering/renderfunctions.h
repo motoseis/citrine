@@ -73,6 +73,8 @@ struct ComposeSequenceParams {
   QShader yuvFrag;
   QShader resolveFrag;
   QShader downscaleFrag;
+  QShader yuv10LumaFrag;
+  QShader yuv10ChromaFrag;
 
   // Main compositing target (PreserveColorContents)
   QRhiTexture* main_tex;
@@ -102,6 +104,13 @@ void resolve_to_8bit(ComposeSequenceParams& params, QRhiTexture* src, QRhiTextur
 // pixels it covers, so the result does not alias. With dither, half an 8-bit step of noise is added (RGBA8 output).
 void downscale_export(ComposeSequenceParams& params, QRhiTexture* src, QSize src_size, QRhiTextureRenderTarget* dst,
                       QRhiRenderPassDescriptor* rpd, QSize dst_size, bool dither);
+
+// Writes 10-bit limited-range luma (or, with chroma, half-resolution Cb/Cr) of an RGB source into a 16-bit target.
+// msb_aligned selects P010 layout (code in the top 10 bits) instead of yuv420p10le.
+void yuv10_luma(ComposeSequenceParams& params, QRhiTexture* src, QRhiTextureRenderTarget* dst,
+                QRhiRenderPassDescriptor* rpd, bool msb_aligned);
+void yuv10_chroma(ComposeSequenceParams& params, QRhiTexture* src, QSize src_size, QRhiTextureRenderTarget* dst,
+                  QRhiRenderPassDescriptor* rpd, bool msb_aligned);
 
 void compose_audio(Viewer* viewer, Sequence *seq, int playback_speed, bool wait_for_mutexes);
 }

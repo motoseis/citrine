@@ -98,6 +98,19 @@ AVPixelFormat FirstTenBitPixFmt(const AVCodec* codec) {
   return fallback;
 }
 
+// Allocates a frame in the encoder's format. Returns nullptr on failure.
+static AVFrame* alloc_frame(AVPixelFormat fmt, int width, int height) {
+  AVFrame* frame = av_frame_alloc();
+  if (frame == nullptr) return nullptr;
+  frame->format = fmt;
+  frame->width = width;
+  frame->height = height;
+  if (av_frame_get_buffer(frame, 0) < 0) {
+    av_frame_free(&frame);
+  }
+  return frame;
+}
+
 // The 16-bit render target reads back as half-float RGBA. Rewrite each channel in place as an unsigned
 // 16-bit value (0-65535) so swscale can read the frame as RGBA64. No noise is added here: 8-bit sources are
 // dithered where they are decoded (yuv2rgb.frag), so the rest of the frame is not grained.
@@ -429,8 +442,12 @@ bool ExportThread::SetupVideo() {
     export_error = tr("no active sequence");
     return false;
   }
+  // 10-bit 4:2:0 for P010 and yuv420p10le encoders: the GPU writes these planes, so no CPU conversion is needed.
+  // VAAPI and other formats keep the RGBA path.
+  yuv_direct_ = video_10bit_ && !vaapi && (sw_pix_fmt == AV_PIX_FMT_P010LE || sw_pix_fmt == AV_PIX_FMT_YUV420P10LE) &&
+                params_.video_width % 2 == 0 && params_.video_height % 2 == 0 && amber::Yuv10BitExportSupported.load();
   video_frame = av_frame_alloc();
-  video_frame->format = video_10bit_ ? AV_PIX_FMT_RGBA64LE : AV_PIX_FMT_RGBA;
+  video_frame->format = yuv_direct_ ? sw_pix_fmt : (video_10bit_ ? AV_PIX_FMT_RGBA64LE : AV_PIX_FMT_RGBA);
   // Frames are rendered at the output size, so they are not rendered at the sequence size and downscaled later
   video_frame->width = params_.video_width;
   video_frame->height = params_.video_height;
@@ -831,15 +848,35 @@ bool ExportThread::Export()
     const bool render_next = params_.video_enabled && frame + 1 <= params_.end_frame;
     amber::ActiveSequence->playhead = frame + 1;
     if (render_next) {
+      if (yuv_direct_) {
+        // A new frame each time, so the encoder never reads a buffer that the next render is writing into
+        av_frame_free(&video_frame_alt);
+        video_frame_alt = alloc_frame(sw_pix_fmt, params_.video_width, params_.video_height);
+        if (video_frame_alt == nullptr) {
+          export_error = tr("could not allocate video frame buffer");
+          frames_ok = false;
+          goto cleanup_renderer;
+        }
+      }
       start_video_render(renderer, video_frame_alt);
     }
 
     // Timecode of this frame in seconds (used for timestamp calculations later on)
     double timecode_secs = double(frame - params_.start_frame) / amber::ActiveSequence->frame_rate;
 
-    // If we're exporting video, construct an AVFrame in the destination codec's pixel format to convert the raw RGBA
-    // OpenGL buffer to
-    if (params_.video_enabled) {
+    if (params_.video_enabled && yuv_direct_) {
+      // The GPU already wrote the planes in the encoder's format: encode the rendered frame as it is
+      phase_timer.restart();
+      video_frame->pts = qRound(timecode_secs/av_q2d(vcodec_ctx->time_base));
+      bool encoded = Encode(fmt_ctx, vcodec_ctx, video_frame, video_pkt, video_stream);
+      phase_times.encode_us += lap_us(phase_timer);
+      if (!encoded) {
+        frames_ok = false;
+        goto cleanup_renderer;
+      }
+    } else if (params_.video_enabled) {
+      // If we're exporting video, construct an AVFrame in the destination codec's pixel format to convert the raw
+      // RGBA OpenGL buffer to
 
       //
       // - I'm not sure why, but we have to alloc/free sws_frame every frame, or it breaks GIF exporting.
@@ -1184,6 +1221,31 @@ void ExportThread::play_wake()
 
 void ExportThread::start_video_render(RenderThread* renderer, AVFrame* buf) {
   render_complete_ = false;
+  if (yuv_direct_) {
+    ExportPlanes planes;
+    planes.y = buf->data[0];
+    planes.y_stride = buf->linesize[0];
+    planes.msb_aligned = (sw_pix_fmt == AV_PIX_FMT_P010LE);
+    if (planes.msb_aligned) {
+      // P010: one interleaved UV plane, U then V for each chroma sample
+      planes.u = buf->data[1];
+      planes.u_stride = buf->linesize[1];
+      planes.u_step = 4;
+      planes.v = buf->data[1] + 2;
+      planes.v_stride = buf->linesize[1];
+      planes.v_step = 4;
+    } else {
+      planes.u = buf->data[1];
+      planes.u_stride = buf->linesize[1];
+      planes.u_step = 2;
+      planes.v = buf->data[2];
+      planes.v_stride = buf->linesize[2];
+      planes.v_step = 2;
+    }
+    renderer->start_render(amber::ActiveSequence.get(), 1, nullptr, buf->data[0], buf->linesize[0], 0, false, true,
+                           params_.video_width, params_.video_height, &planes);
+    return;
+  }
   renderer->start_render(amber::ActiveSequence.get(), 1, nullptr, buf->data[0],
                          buf->linesize[0] / (video_10bit_ ? 8 : 4), 0, false, video_10bit_,
                          params_.video_width, params_.video_height);

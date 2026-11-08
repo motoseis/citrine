@@ -370,6 +370,32 @@ void amber::rendering::downscale_export(ComposeSequenceParams& params, QRhiTextu
            nullptr, nullptr, true);
 }
 
+void amber::rendering::yuv10_luma(ComposeSequenceParams& params, QRhiTexture* src, QRhiTextureRenderTarget* dst,
+                                  QRhiRenderPassDescriptor* rpd, bool msb_aligned) {
+  const float data[4] = {msb_aligned ? 64.0f : 1.0f, 0.0f, 0.0f, 0.0f};
+  QByteArray fragData(reinterpret_cast<const char*>(data), sizeof(data));
+
+  QMatrix4x4 mvp;
+  mvp.ortho(-1, 1, -1, 1, -1, 1);
+
+  rhi_blit(params, dst, rpd, src, params.passthroughVert, params.yuv10LumaFrag, mvp, fragData, int(sizeof(data)), 1,
+           nullptr, nullptr, true);
+}
+
+void amber::rendering::yuv10_chroma(ComposeSequenceParams& params, QRhiTexture* src, QSize src_size,
+                                    QRhiTextureRenderTarget* dst, QRhiRenderPassDescriptor* rpd, bool msb_aligned) {
+  // Half of one full-resolution pixel, so the four taps land on the centres of the 2x2 block
+  const float data[4] = {msb_aligned ? 64.0f : 1.0f, 0.5f / float(src_size.width()), 0.5f / float(src_size.height()),
+                         0.0f};
+  QByteArray fragData(reinterpret_cast<const char*>(data), sizeof(data));
+
+  QMatrix4x4 mvp;
+  mvp.ortho(-1, 1, -1, 1, -1, 1);
+
+  rhi_blit(params, dst, rpd, src, params.passthroughVert, params.yuv10ChromaFrag, mvp, fragData, int(sizeof(data)), 1,
+           nullptr, nullptr, true);
+}
+
 // Helper: create clip's ping-pong QRhiTexture + render target pairs (replaces QOpenGLFramebufferObject)
 static ClipRhiResources* get_or_create_clip_resources(Clip* c, QRhi* rhi, int width, int height) {
   if (!c) {

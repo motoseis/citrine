@@ -69,6 +69,9 @@ void RenderThread::DeferRhiResourceDeletion(const QVector<QRhiResource*>& resour
   }
 }
 
+static void copy_yuv_planes(const QRhiReadbackResult& luma, const QRhiReadbackResult& chroma,
+                            const ExportPlanes& dst, QSize size);
+
 QRhiTexture::Format RenderThread::IntermediateFormat() {
   return amber::HighPrecisionIntermediates.load() ? QRhiTexture::RGBA16F : QRhiTexture::RGBA8;
 }
@@ -194,6 +197,8 @@ void RenderThread::run() {
       amber::Yuv10BitSupported = rhi_->isTextureFormatSupported(QRhiTexture::R16) &&
                                  rhi_->isTextureFormatSupported(QRhiTexture::RG16);
       qInfo() << "10-bit YUV decode supported:" << amber::Yuv10BitSupported.load();
+      amber::Yuv10BitExportSupported = rhi_->isTextureFormatSupported(QRhiTexture::R16, QRhiTexture::RenderTarget) &&
+                                       rhi_->isTextureFormatSupported(QRhiTexture::RG16, QRhiTexture::RenderTarget);
 
       // Compositing in RGBA16F needs the backend to render into it; otherwise every target stays RGBA8
       amber::HighPrecisionIntermediates = rhi_->isTextureFormatSupported(QRhiTexture::RGBA16F);
@@ -207,6 +212,8 @@ void RenderThread::run() {
       yuvFrag_ = loadQsb(QStringLiteral(":/shaders/yuv2rgb.frag.qsb"));
       resolveFrag_ = loadQsb(QStringLiteral(":/shaders/resolve8.frag.qsb"));
       downscaleFrag_ = loadQsb(QStringLiteral(":/shaders/downscale.frag.qsb"));
+      yuv10LumaFrag_ = loadQsb(QStringLiteral(":/shaders/yuv10_luma.frag.qsb"));
+      yuv10ChromaFrag_ = loadQsb(QStringLiteral(":/shaders/yuv10_chroma.frag.qsb"));
 
       // Sampler
       sampler_ = rhi_->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
@@ -344,6 +351,8 @@ void RenderThread::paint() {
   params.yuvFrag = yuvFrag_;
   params.resolveFrag = resolveFrag_;
   params.downscaleFrag = downscaleFrag_;
+  params.yuv10LumaFrag = yuv10LumaFrag_;
+  params.yuv10ChromaFrag = yuv10ChromaFrag_;
 
   params.main_tex = front_tex_[active_idx];
   params.main_target = front_rt_[active_idx];
@@ -376,11 +385,26 @@ void RenderThread::paint() {
     readback_tex = resolve_tex_;
   }
 
+  // 10-bit 4:2:0 export: the GPU writes the luma and chroma planes, and only those are read back. For 16-bit
+  // exports readback_tex is already the RGB frame at the output size.
+  const bool yuv_planes = pixel_buffer != nullptr && export_planes_valid_ && export16;
+  QRhiReadbackResult readback_uv;
+  if (yuv_planes) {
+    ensure_yuv_targets(frame_size);
+    amber::rendering::yuv10_luma(params, readback_tex, yuv_y_rt_, yuv_y_rpd_, export_planes_.msb_aligned);
+    amber::rendering::yuv10_chroma(params, readback_tex, frame_size, yuv_uv_rt_, yuv_uv_rpd_,
+                                   export_planes_.msb_aligned);
+    readback_tex = yuv_y_tex_;
+  }
+
   // CPU readback
   {
     QRhiReadbackResult readback;
     QRhiResourceUpdateBatch* u = rhi_->nextResourceUpdateBatch();
     u->readBackTexture(QRhiReadbackDescription(readback_tex), &readback);
+    if (yuv_planes) {
+      u->readBackTexture(QRhiReadbackDescription(yuv_uv_tex_), &readback_uv);
+    }
     QColor clearColor(0, 0, 0, 0);
     cb->beginPass(front_rt_[active_idx], clearColor, {1.0f, 0});
     cb->endPass(u);
@@ -393,7 +417,9 @@ void RenderThread::paint() {
     // Drain deferred deletes from other threads (e.g. Clip::Close on main thread)
     drainDeferredDeletes();
 
-    if (export16) {
+    if (yuv_planes) {
+      copy_yuv_planes(readback, readback_uv, export_planes_, frame_size);
+    } else if (export16) {
       export_frame16_ = readback.data;
     } else {
       QByteArray& dst = cpu_frame_[active_idx];
@@ -436,10 +462,10 @@ void RenderThread::paint() {
     }
   }
 
-  // Export pixel buffer if requested
+  // Export pixel buffer if requested (the plane path has already written its destination)
   if (pixel_buffer != nullptr) {
     QByteArray& data = export16 ? export_frame16_ : cpu_frame_[active_idx];
-    if (!data.isEmpty()) {
+    if (!data.isEmpty() && !yuv_planes) {
       const int bytes_per_pixel = export16 ? 8 : 4;  // half-float RGBA or 8-bit RGBA
       int copy_width = pixel_buffer_linesize == 0 ? frame_size.width() : pixel_buffer_linesize;
       int row_bytes = copy_width * bytes_per_pixel;
@@ -472,7 +498,8 @@ void RenderThread::start_render(Sequence* s,
                                 bool scrubbing,
                                 bool half_float_pixels,
                                 int export_width,
-                                int export_height) {
+                                int export_height,
+                                const ExportPlanes* planes) {
   // Apply preview resolution divider for playback (not export)
   if (pixels == nullptr) {
     divider_ = qMax(1, idivider);
@@ -511,6 +538,8 @@ void RenderThread::start_render(Sequence* s,
     pixel_buffer_16bit = half_float_pixels;
     // Render at the output size, so the frame is not rendered at the sequence size and downscaled afterwards
     export_size_ = (export_width > 0 && export_height > 0) ? QSize(export_width, export_height) : QSize();
+    export_planes_valid_ = planes != nullptr;
+    if (planes != nullptr) export_planes_ = *planes;
   }
 
   queued = true;
@@ -568,6 +597,7 @@ void RenderThread::delete_buffers() {
   delete resolve_rpd_;
   resolve_rpd_ = nullptr;
   delete_export_target();
+  delete_yuv_targets();
 }
 
 void RenderThread::delete_export_target() {
@@ -609,4 +639,71 @@ void RenderThread::delete_ctx() {
   }
   fallbackSurface_ = nullptr;
   owns_fallback_surface_ = false;
+}
+
+void RenderThread::delete_yuv_targets() {
+  delete yuv_y_rt_;
+  yuv_y_rt_ = nullptr;
+  delete yuv_y_tex_;
+  yuv_y_tex_ = nullptr;
+  delete yuv_y_rpd_;
+  yuv_y_rpd_ = nullptr;
+  delete yuv_uv_rt_;
+  yuv_uv_rt_ = nullptr;
+  delete yuv_uv_tex_;
+  yuv_uv_tex_ = nullptr;
+  delete yuv_uv_rpd_;
+  yuv_uv_rpd_ = nullptr;
+  yuv_size_ = QSize();
+}
+
+// Luma is 16-bit per sample at the output size; chroma is 2x2 samples per 4 luma samples, two channels (Cb, Cr)
+void RenderThread::ensure_yuv_targets(QSize luma_size) {
+  if (yuv_y_tex_ != nullptr && yuv_size_ == luma_size) return;
+  delete_yuv_targets();
+  const QSize chroma_size(luma_size.width() / 2, luma_size.height() / 2);
+
+  yuv_y_tex_ = rhi_->newTexture(QRhiTexture::R16, luma_size, 1,
+                                QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource);
+  yuv_y_tex_->create();
+  yuv_y_rt_ = rhi_->newTextureRenderTarget({yuv_y_tex_});
+  yuv_y_rpd_ = yuv_y_rt_->newCompatibleRenderPassDescriptor();
+  yuv_y_rt_->setRenderPassDescriptor(yuv_y_rpd_);
+  yuv_y_rt_->create();
+
+  yuv_uv_tex_ = rhi_->newTexture(QRhiTexture::RG16, chroma_size, 1,
+                                 QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource);
+  yuv_uv_tex_->create();
+  yuv_uv_rt_ = rhi_->newTextureRenderTarget({yuv_uv_tex_});
+  yuv_uv_rpd_ = yuv_uv_rt_->newCompatibleRenderPassDescriptor();
+  yuv_uv_rt_->setRenderPassDescriptor(yuv_uv_rpd_);
+  yuv_uv_rt_->create();
+
+  yuv_size_ = luma_size;
+}
+
+// Copies the read-back luma and chroma into the export planes. Rows are tight in the read-back, so only the
+// destination stride needs care.
+static void copy_yuv_planes(const QRhiReadbackResult& luma, const QRhiReadbackResult& chroma,
+                            const ExportPlanes& dst, QSize size) {
+  const int w = size.width();
+  const int h = size.height();
+  const int cw = w / 2;
+  const int ch = h / 2;
+  if (luma.data.size() < w * 2 * h || chroma.data.size() < cw * 4 * ch) {
+    qWarning() << "Export planes: read-back is smaller than the frame";
+    return;
+  }
+  for (int y = 0; y < h; y++) {
+    memcpy(dst.y + y * dst.y_stride, luma.data.constData() + y * w * 2, w * 2);
+  }
+  for (int y = 0; y < ch; y++) {
+    const char* src = chroma.data.constData() + y * cw * 4;
+    quint8* u_row = dst.u + y * dst.u_stride;
+    quint8* v_row = dst.v + y * dst.v_stride;
+    for (int x = 0; x < cw; x++) {
+      memcpy(u_row + x * dst.u_step, src + x * 4, 2);
+      memcpy(v_row + x * dst.v_step, src + x * 4 + 2, 2);
+    }
+  }
 }

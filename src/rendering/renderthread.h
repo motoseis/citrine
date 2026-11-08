@@ -32,6 +32,20 @@
 #include "engine/sequence.h"
 #include "effects/effect.h"
 
+// Where the render writes the export planes: luma, then chroma. A chroma sample for U is at u + x * u_step (bytes),
+// and V at v + x * v_step, so interleaved (P010) and planar (yuv420p10le) layouts use the same copy.
+struct ExportPlanes {
+  quint8* y{nullptr};
+  int y_stride{0};  // bytes per row
+  quint8* u{nullptr};
+  int u_stride{0};
+  int u_step{0};
+  quint8* v{nullptr};
+  int v_stride{0};
+  int v_step{0};
+  bool msb_aligned{true};  // true for P010 (code in the top 10 bits), false for yuv420p10le
+};
+
 class RenderThread : public QThread {
   Q_OBJECT
 public:
@@ -68,7 +82,8 @@ public:
                     bool scrubbing = false,
                     bool half_float_pixels = false,
                     int export_width = 0,
-                    int export_height = 0);
+                    int export_height = 0,
+                    const ExportPlanes* planes = nullptr);
   bool did_texture_fail();
   // True once QRhi creation has failed. ready() is still emitted then, so a waiting ExportThread wakes up.
   bool rhi_failed() const;
@@ -109,6 +124,8 @@ private:
   QShader yuvFrag_;
   QShader resolveFrag_;
   QShader downscaleFrag_;
+  QShader yuv10LumaFrag_;
+  QShader yuv10ChromaFrag_;
 
   QRhiSampler* sampler_{nullptr};
 
@@ -142,6 +159,20 @@ private:
   bool export_tex_8bit_{false};
   void ensure_export_target(QSize size, bool eight_bit);
   void delete_export_target();
+
+  // 10-bit 4:2:0 planes written straight from the GPU, so the export needs no CPU conversion
+  QRhiTexture* yuv_y_tex_{nullptr};
+  QRhiTextureRenderTarget* yuv_y_rt_{nullptr};
+  QRhiRenderPassDescriptor* yuv_y_rpd_{nullptr};
+  QRhiTexture* yuv_uv_tex_{nullptr};
+  QRhiTextureRenderTarget* yuv_uv_rt_{nullptr};
+  QRhiRenderPassDescriptor* yuv_uv_rpd_{nullptr};
+  QSize yuv_size_;
+  void ensure_yuv_targets(QSize luma_size);
+  void delete_yuv_targets();
+  // Destination of the planes for the export in progress; set by start_render when planes are requested
+  ExportPlanes export_planes_;
+  bool export_planes_valid_{false};
 
   QWaitCondition wait_cond_;
   QMutex wait_lock_;

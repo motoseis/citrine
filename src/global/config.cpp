@@ -31,6 +31,7 @@
 Config amber::CurrentConfig;
 RuntimeConfig amber::CurrentRuntimeConfig;
 std::atomic_bool amber::Yuv10BitSupported{false};
+std::atomic_bool amber::Yuv10BitExportSupported{false};
 std::atomic_bool amber::HighPrecisionIntermediates{false};
 
 namespace {

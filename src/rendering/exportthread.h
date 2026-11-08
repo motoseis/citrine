@@ -138,6 +138,8 @@ private:
   AVPixelFormat sw_pix_fmt{AV_PIX_FMT_NONE};
   // True when the chosen output format is 10-bit or deeper: frames are rendered at 16 bits per channel
   bool video_10bit_{false};
+  // The GPU writes the 10-bit 4:2:0 planes and the frame is encoded as rendered (no swscale)
+  bool yuv_direct_{false};
   AVBufferRef* hw_device_ctx{nullptr};
   AVBufferRef* hw_frames_ctx{nullptr};
   AVStream* audio_stream{nullptr};

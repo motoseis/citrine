@@ -768,6 +768,8 @@ extern RuntimeConfig CurrentRuntimeConfig;
 // Set by the render thread once QRhi is up: true when the backend can sample 16-bit R/RG textures,
 // which the 10-bit YUV upload path needs. Until then the decoder stays on 8-bit formats.
 extern std::atomic_bool Yuv10BitSupported;
+// The GPU can render into R16/RG16 targets, which the 10-bit export planes need
+extern std::atomic_bool Yuv10BitExportSupported;
 // Set by the render thread once QRhi is up: true when the backend can render into RGBA16F, so the
 // compositing targets keep more than 8 bits per channel. False keeps every target at RGBA8.
 extern std::atomic_bool HighPrecisionIntermediates;
