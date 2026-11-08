@@ -1007,16 +1007,6 @@ bool ExportThread::Export()
 
     }
 
-    // Generating encoding statistics (e.g. the time it took to encode this frame/estimated remaining time)
-    frame_time = (QDateTime::currentMSecsSinceEpoch()-frame_start_time);
-    total_time += frame_time;
-    remaining_frames = (params_.end_frame - frame);
-    avg_time = (total_time/frame_count);
-    eta = (remaining_frames*avg_time);
-
-    // Emit a signal for the percent of the sequence that's been encoded so far
-    emit ProgressChanged(qRound((double(frame - params_.start_frame) / double(params_.end_frame - params_.start_frame)) * 100.0), eta);
-
     // The next frame has been rendering during this frame's encode. Wait for it, then swap it in as the current frame.
     if (render_next) {
       phase_timer.restart();
@@ -1038,6 +1028,18 @@ bool ExportThread::Export()
       }
       std::swap(video_frame, video_frame_alt);
     }
+
+    // Statistics are taken after the wait for the next frame, so the frame time covers the whole loop
+    // iteration. Taking them earlier left out the render wait and made the ETA too short.
+    // Generating encoding statistics (e.g. the time it took to encode this frame/estimated remaining time)
+    frame_time = (QDateTime::currentMSecsSinceEpoch()-frame_start_time);
+    total_time += frame_time;
+    remaining_frames = (params_.end_frame - frame);
+    avg_time = (total_time/frame_count);
+    eta = (remaining_frames*avg_time);
+
+    // Emit a signal for the percent of the sequence that's been encoded so far
+    emit ProgressChanged(qRound((double(frame - params_.start_frame) / double(params_.end_frame - params_.start_frame)) * 100.0), eta);
 
     // Increment frame count (used for generating encoding statistics above)
     frame_count++;
