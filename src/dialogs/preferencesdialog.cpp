@@ -753,6 +753,10 @@ void PreferencesDialog::setup_ui() {
   AddBoolPair(invert_timeline_scroll_axes, &amber::CurrentConfig.invert_timeline_scroll_axes);
   behavior_tab_layout->Add(invert_timeline_scroll_axes);
 
+  QCheckBox* rectified_waveforms = new QCheckBox(tr("Rectified Waveforms (draw the positive side only, from the bottom of the clip)"));
+  AddBoolPair(rectified_waveforms, &amber::CurrentConfig.rectified_waveforms);
+  behavior_tab_layout->Add(rectified_waveforms);
+
   QCheckBox* enable_drag_files_to_timeline = new QCheckBox(tr("Enable Drag Files to Timeline"));
   AddBoolPair(enable_drag_files_to_timeline, &amber::CurrentConfig.enable_drag_files_to_timeline);
   behavior_tab_layout->Add(enable_drag_files_to_timeline);

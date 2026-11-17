@@ -22,6 +22,10 @@
 
 #include <QPainter>
 
+#include <cmath>
+
+#include "effects/effect.h"
+#include "effects/internal/volumeeffect.h"
 #include "global/config.h"
 #include "panels/panels.h"
 #include "rendering/renderfunctions.h"
@@ -33,6 +37,33 @@
 #define TRANSITION_BETWEEN_RANGE 40
 
 bool current_tool_shows_cursor();
+
+// Waveform height for one stored sample, on a decibel scale: the track centre is silence, the track edge is full
+// scale, and anything quieter than kWaveformFloorDb is drawn as silence. Quiet material stays visible this way.
+// sample is the stored signed 8-bit value and gain is linear (from the clip's Volume).
+static double waveform_height(double sample, double gain, double half_height) {
+  const double kWaveformFloorDb = 40.0;
+  double amp = qAbs(sample) / 128.0 * gain;
+  if (amp <= 0.0) return 0.0;
+  double db = 20.0 * std::log10(amp);
+  double f = qBound(0.0, (db + kWaveformFloorDb) / kWaveformFloorDb, 1.0);
+  return (sample < 0 ? -f : f) * half_height;
+}
+
+// Linear gain from the clip's enabled Volume effects at a point in the clip, so the waveform follows volume
+// changes and keyframes the same way playback does. clip_frame is the offset from the clip's start in frames.
+static double waveform_gain_at(const ClipPtr& clip, double clip_frame) {
+  double gain = 1.0;
+  double timecode = (clip_frame + clip->clip_in(true)) / clip->sequence->frame_rate;
+  for (const auto& effect : clip->effects) {
+    if (!effect || !effect->IsEnabled()) continue;
+    VolumeEffect* volume = dynamic_cast<VolumeEffect*>(effect.get());
+    if (volume != nullptr) {
+      gain *= volume->volume_val->GetDoubleAt(timecode);
+    }
+  }
+  return gain;
+}
 
 void draw_waveform(ClipPtr clip, const FootageStream* ms, long media_length, QPainter *p, const QRect& clip_rect, int waveform_start, int waveform_limit, double zoom) {
 	if (!ms) {
@@ -49,9 +80,17 @@ void draw_waveform(ClipPtr clip, const FootageStream* ms, long media_length, QPa
   int divider = ms->audio_channels*2;
 
   int channel_height = clip_rect.height()/ms->audio_channels;
+  const double half_height = channel_height / 2.0;
+  const bool rectified = amber::CurrentConfig.rectified_waveforms;
 
   int last_waveform_index = -1;
   int preview_size = ms->audio_preview.size();
+
+  // For each channel, the top and bottom edge of the waveform at every visible pixel column.
+  // The edges are kept as sub-pixel coordinates and filled as one polygon per channel, which
+  // antialiasing can smooth; per-pixel integer lines looked like steps.
+  QVector<QVector<QPointF>> upper_edges(ms->audio_channels);
+  QVector<QVector<QPointF>> lower_edges(ms->audio_channels);
 
   for (int i=waveform_start;i<waveform_limit;i++) {
     int waveform_index = qFloor((((clip->clip_in() + (double(i)/zoom))/media_length) * preview_size)/divider)*divider;
@@ -64,8 +103,11 @@ void draw_waveform(ClipPtr clip, const FootageStream* ms, long media_length, QPa
 
     if (last_waveform_index < 0) last_waveform_index = waveform_index;
 
+    const double x = clip_rect.left() + i + 0.5;
+    const double gain = waveform_gain_at(clip, double(i) / zoom);
+
     for (int j=0;j<ms->audio_channels;j++) {
-      int mid = (amber::CurrentConfig.rectified_waveforms) ? clip_rect.top()+channel_height*(j+1) : clip_rect.top()+channel_height*j+(channel_height/2);
+      double mid = (rectified) ? clip_rect.top()+channel_height*(j+1) : clip_rect.top()+channel_height*j+(channel_height/2);
 
       int offset_range_start = last_waveform_index+(j*2);
       int offset_range_end = waveform_index+(j*2);
@@ -74,32 +116,51 @@ void draw_waveform(ClipPtr clip, const FootageStream* ms, long media_length, QPa
 
       if (offset_range_min < 0 || offset_range_min + 1 >= preview_size) continue;
 
-      qint8 min = qint8(qRound(double(ms->audio_preview.at(offset_range_min)) / 128.0 * (channel_height/2)));
-      qint8 max = qint8(qRound(double(ms->audio_preview.at(offset_range_min+1)) / 128.0 * (channel_height/2)));
+      double min = waveform_height(ms->audio_preview.at(offset_range_min), gain, half_height);
+      double max = waveform_height(ms->audio_preview.at(offset_range_min+1), gain, half_height);
 
       if ((offset_range_max + 1) < preview_size) {
 
         // for waveform drawings, we get the maximum below 0 and maximum above 0 for this waveform range
         for (int k=offset_range_min+2;k<=offset_range_max;k+=2) {
-          min = qMin(min, qint8(qRound(double(ms->audio_preview.at(k)) / 128.0 * (channel_height/2))));
-          max = qMax(max, qint8(qRound(double(ms->audio_preview.at(k+1)) / 128.0 * (channel_height/2))));
+          min = qMin(min, waveform_height(ms->audio_preview.at(k), gain, half_height));
+          max = qMax(max, waveform_height(ms->audio_preview.at(k+1), gain, half_height));
         }
 
-        // draw waveforms
-        if (amber::CurrentConfig.rectified_waveforms)  {
-
+        if (rectified) {
           // rectified waveforms start from the bottom and draw upwards
-          p->drawLine(clip_rect.left()+i, mid, clip_rect.left()+i, mid - (max - min));
+          // the larger of the two peaks, so the level matches the centred view (min is <= 0, max is >= 0)
+          upper_edges[j].append(QPointF(x, mid - qMax(-min, max)));
+          lower_edges[j].append(QPointF(x, mid));
         } else {
-
           // non-rectified waveforms start from the center and draw outwards
-          p->drawLine(clip_rect.left()+i, mid+min, clip_rect.left()+i, mid+max);
-
+          upper_edges[j].append(QPointF(x, mid + min));
+          lower_edges[j].append(QPointF(x, mid + max));
         }
       }
     }
     last_waveform_index = waveform_index;
   }
+
+  // Fill each channel's waveform as one antialiased polygon: upper edge left to right, then lower edge back
+  p->save();
+  p->setRenderHint(QPainter::Antialiasing, true);
+  p->setPen(Qt::NoPen);
+  // light and semi-transparent so the waveform reads on any clip colour, not as a solid black block
+  p->setBrush(QColor(235, 235, 235, 120));
+
+  for (int j=0;j<ms->audio_channels;j++) {
+    if (upper_edges[j].size() < 2) continue;
+
+    QPolygonF outline;
+    outline.reserve(upper_edges[j].size() * 2);
+    for (const QPointF& pt : upper_edges[j]) outline << pt;
+    for (int k=lower_edges[j].size()-1;k>=0;k--) outline << lower_edges[j][k];
+
+    p->drawPolygon(outline);
+  }
+
+  p->restore();
 }
 
 void draw_transition(QPainter& p, ClipPtr c, const QRect& clip_rect, QRect& text_rect, int transition_type) {
@@ -176,6 +237,7 @@ void TimelineWidget::drawClips(QPainter& p) {
           bool draw_checkerboard = false;
           QRect checkerboard_rect(clip_rect);
           FootageStream* ms = clip->media_stream();
+
           if (ms == nullptr) {
             draw_checkerboard = true;
           } else if (ms->preview_done) {
@@ -278,6 +340,18 @@ void TimelineWidget::drawClips(QPainter& p) {
 
               draw_waveform(clip, ms, waveform_length, &p, clip_rect, waveform_start, waveform_limit, panel_timeline->zoom);
             }
+          } else {
+            // The waveform is still being analysed and this paint can't show it. Nothing else repaints the timeline
+            // when analysis finishes, so ask for another paint shortly; this stops once the analysis is done.
+            Footage* f = clip->media()->to_footage();
+            static bool waveform_repaint_pending = false;
+            if (f != nullptr && f->preview_gen.load() != nullptr && !waveform_repaint_pending) {
+              waveform_repaint_pending = true;
+              QTimer::singleShot(250, this, [this]() {
+                waveform_repaint_pending = false;
+                update();
+              });
+            }
           }
           if (draw_checkerboard) {
             checkerboard_rect.setLeft(qMax(checkerboard_rect.left(), 0));
@@ -335,8 +409,8 @@ void TimelineWidget::drawClips(QPainter& p) {
         if (clip_rect.x() >= 0 && clip_rect.x() < width()) p.drawLine(clip_rect.bottomLeft(), clip_rect.topLeft());
         if (clip_rect.y() >= 0 && clip_rect.y() < height()) p.drawLine(QPoint(qMax(0, clip_rect.left()), clip_rect.top()), QPoint(qMin(width(), clip_rect.right()), clip_rect.top()));
 
-        // draw text
-        if (text_rect.width() > MAX_TEXT_WIDTH && text_rect.right() > 0 && text_rect.left() < width()) {
+        // draw text (audio clips are not labelled, so the name doesn't cover the waveform)
+        if (clip->track() < 0 && text_rect.width() > MAX_TEXT_WIDTH && text_rect.right() > 0 && text_rect.left() < width()) {
           if (!clip->enabled()) {
             p.setPen(Qt::gray);
           } else if (clip->color().lightness() > 160) {
