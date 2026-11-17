@@ -76,7 +76,7 @@ QList<QString> get_effects_paths() {
   effects_paths.append(app_dir.filePath("../Effects"));
 
   // folder in share folder - best for Linux
-  effects_paths.append(app_dir.filePath("../share/amber-editor/effects"));
+  effects_paths.append(app_dir.filePath("../share/citrine-editor/effects"));
 
   // user path - best for linux
   effects_paths.append(QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)).filePath("effects"));
@@ -114,7 +114,7 @@ QList<QString> get_language_paths() {
   language_paths.append(app_dir.filePath("../Translations"));
 
   // folder in share folder - best for Linux
-  language_paths.append(app_dir.filePath("../share/amber-editor/ts"));
+  language_paths.append(app_dir.filePath("../share/citrine-editor/ts"));
 
   // Olive will also accept a manually provided folder with an environment variable
   QString env_path(qgetenv("OLIVE_LANG_PATH"));
