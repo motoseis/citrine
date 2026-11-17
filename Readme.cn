@@ -174,3 +174,17 @@ v2.0: 261108
 	5. The export timing log also shows the render start time and the whole loop time per frame.
 	6. Export with hardware decoding off: exports already decode in software, so the Hardware Decoding preference only
 	   affects timeline playback and proxy generation.
+
+v2.1: 261117
+	1. Audio waveforms are drawn as smooth, antialiased shapes instead of blocky one-pixel lines.
+	2. Waveforms use a decibel scale (from -40 dB at the centre to full scale at the edge), so quiet
+	   clips and music are readable as well as loud ones.
+	3. Waveforms follow the clip's Volume effect, including keyframes, so the graph changes when the
+	   volume is raised or faded. Peaks that would go past full scale are clipped at the track edge.
+	4. The timeline redraws while a clip's waveform is still being analysed, so waveforms appear without
+	   needing a click or mouse movement.
+	5. Waveforms use a light, semi-transparent fill that reads on any clip colour.
+	6. Preferences > Behavior > "Rectified Waveforms" draws only the positive side of the waveform, from
+	   the bottom of the clip. It is off by default.
+	7. Audio clips no longer show their name, so the name does not cover the waveform. Video clips keep
+	   their names.
