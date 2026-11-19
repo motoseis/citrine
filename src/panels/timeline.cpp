@@ -53,6 +53,7 @@
 #include "ui/flowlayout.h"
 #include "ui/cursors.h"
 #include "ui/mainwindow.h"
+#include "engine/undo/undo_effect.h"
 #include "engine/undo/undo_timeline.h"
 #include "engine/undo/undostack.h"
 #include "global/debug.h"
@@ -408,6 +409,11 @@ void Timeline::add_clips_from_ghosts(ComboAction* ca, Sequence* s) {
       if (c != cc && c->media() == cc->media()) {
         c->linked.append(j);
       }
+    }
+
+    if (c->track() >= 0 && amber::CurrentConfig.loudness_on_audio_clips) {
+      // loudness goes first, so the default Volume and Pan apply after it
+      c->effects.append(Effect::Create(c.get(), Effect::GetInternalMeta(EFFECT_INTERNAL_LOUDNESS, EFFECT_TYPE_EFFECT)));
     }
 
     if (amber::CurrentConfig.add_default_effects_to_clips) {
@@ -1640,6 +1646,15 @@ void Timeline::three_point_edit(bool insert) {
     new_clips.append(ac);
   }
 
+  // loudness on the audio clip, if the preference is set (the clips are not on the timeline yet)
+  if (amber::CurrentConfig.loudness_on_audio_clips) {
+    for (const ClipPtr& nc : new_clips) {
+      if (nc->track() >= 0) {
+        nc->effects.append(Effect::Create(nc.get(), Effect::GetInternalMeta(EFFECT_INTERNAL_LOUDNESS, EFFECT_TYPE_EFFECT)));
+      }
+    }
+  }
+
   // Link video and audio clips
   if (has_video && has_audio) {
     new_clips[0]->linked.append(1);
@@ -1817,6 +1832,28 @@ void Timeline::toggle_video_track_hidden(int track) {
   bool hide = !amber::ActiveSequence->hidden_video_tracks.contains(track);
   ComboAction* ca = new ComboAction(hide ? tr("Hide Track") : tr("Show Track"));
   ca->append(new SetVideoTrackHiddenAction(amber::ActiveSequence.get(), track, hide));
+  amber::UndoStack.push(ca);
+  update_ui(true);
+}
+
+void Timeline::add_loudness_to_selected_audio() {
+  if (amber::ActiveSequence == nullptr) return;
+
+  ComboAction* ca = new ComboAction(tr("Add Loudness"));
+  bool any = false;
+  for (Clip* c : amber::ActiveSequence->SelectedClips()) {
+    if (c->track() < 0) continue;
+    const EffectMeta* loudness = Effect::GetInternalMeta(EFFECT_INTERNAL_LOUDNESS, EFFECT_TYPE_EFFECT);
+    if (Effect::ClipAlreadyHas(c, loudness)) continue;
+    // inserted first, so the Volume and Pan on the clip apply after it
+    ca->append(new AddEffectCommand(c, nullptr, loudness, 0));
+    any = true;
+  }
+
+  if (!any) {
+    delete ca;
+    return;
+  }
   amber::UndoStack.push(ca);
   update_ui(true);
 }

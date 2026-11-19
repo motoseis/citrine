@@ -917,6 +917,11 @@ bool TimelineWidget::mouseReleaseCreating(ComboAction* ca, bool shift) {
     break;
   }
 
+  if (c->track() >= 0 && amber::CurrentConfig.loudness_on_audio_clips) {
+    // loudness goes first, so the default Volume and Pan apply after it
+    c->effects.append(Effect::Create(c.get(), Effect::GetInternalMeta(EFFECT_INTERNAL_LOUDNESS, EFFECT_TYPE_EFFECT)));
+  }
+
   if (c->track() >= 0 && amber::CurrentConfig.add_default_effects_to_clips) {
     // default audio effects (after custom effects)
     c->effects.append(Effect::Create(c.get(), Effect::GetInternalMeta(EFFECT_INTERNAL_VOLUME, EFFECT_TYPE_EFFECT)));

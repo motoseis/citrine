@@ -245,6 +245,11 @@ class Effect : public QObject {
   static EffectPtr Create(Clip* c, const EffectMeta* em);
   static const EffectMeta* GetInternalMeta(int internal_id, int type);
 
+  // Loudness may only be on a clip once: true if this effect type is single-instance
+  static bool IsSingleInstance(const EffectMeta* m);
+  // true if the clip already has an effect of this single-instance type
+  static bool ClipAlreadyHas(const Clip* c, const EffectMeta* m);
+
  public:
   bool needsLut();
   QString currentLutPath(double timecode);

@@ -112,7 +112,7 @@ void EffectControls::menu_select(QAction* q) {
               new AddTransitionCommand(nullptr, c, nullptr, meta, amber::CurrentConfig.default_transition_length));
         }
       } else {
-        ca->append(new AddEffectCommand(c, nullptr, meta));
+        if (!Effect::ClipAlreadyHas(c, meta)) ca->append(new AddEffectCommand(c, nullptr, meta));
       }
     }
   }

@@ -107,6 +107,8 @@ void TimelineWidget::show_context_menu(const QPoint& pos) {
                   [audio_track]() { panel_timeline->toggle_audio_track_mute(audio_track); });
         }
 
+        menu.addAction(tr("Add Loudness"), panel_timeline, &Timeline::add_loudness_to_selected_audio);
+
         menu.addAction(tr("Auto-Cut Silence"), amber::Global.get(), &OliveGlobal::open_autocut_silence_dialog);
       }
 

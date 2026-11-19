@@ -108,7 +108,7 @@ void LoudnessEffect::rebuild_curve(const FootageStream* ms, const Params& p) {
   const double unity = qBound(p.min_gain, 0.0, p.max_gain);
 
   curve_db_.resize(blocks);
-  double gain = unity;
+  double gain = unity;  // replaced by the first block's wanted gain below
   for (int b = 0; b < blocks; b++) {
     int lo = qMax(0, b - half_window);
     int hi = qMin(blocks - 1, b + half_window);
@@ -118,6 +118,8 @@ void LoudnessEffect::rebuild_curve(const FootageStream* ms, const Params& p) {
     // quiet windows are left at unity rather than boosted towards the target
     double wanted = (level_db < kGateDb) ? unity : qBound(p.min_gain, p.target - level_db, p.max_gain);
 
+    // start at the wanted gain, not at unity, so the first seconds of the media are levelled too
+    if (b == 0) gain = wanted;
     gain = qBound(gain - max_step, wanted, gain + max_step);
     curve_db_[b] = float(gain);
   }

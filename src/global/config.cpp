@@ -80,6 +80,7 @@ constexpr BoolEntry kBoolEntries[] = {
     {"UseSoftwareFallback", &Config::use_software_fallback},
     {"CenterTimelineTimecodes", &Config::center_timeline_timecodes},
     {"AddDefaultEffectsToClips", &Config::add_default_effects_to_clips},
+    {"LoudnessOnAudioClips", &Config::loudness_on_audio_clips},
     {"NativeMenuStyling", &Config::use_native_menu_styling},
     {"LockedPanels", &Config::locked_panels},
     {"ShowWelcomeDialog", &Config::show_welcome_dialog},
@@ -272,6 +273,7 @@ void Config::save(QString path) {
   stream.writeTextElement("ThumbnailResolution", QString::number(thumbnail_resolution));
   stream.writeTextElement("WaveformResolution", QString::number(waveform_resolution));
   stream.writeTextElement("AddDefaultEffectsToClips", QString::number(add_default_effects_to_clips));
+  stream.writeTextElement("LoudnessOnAudioClips", QString::number(loudness_on_audio_clips));
   stream.writeTextElement("Style", QString::number(style));
   stream.writeTextElement("NativeMenuStyling", QString::number(use_native_menu_styling));
   stream.writeTextElement("DefaultSequenceWidth", QString::number(default_sequence_width));

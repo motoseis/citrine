@@ -107,6 +107,18 @@ int FieldTypeFromString(const QString& type_str) {
 
 }  // namespace
 
+bool Effect::IsSingleInstance(const EffectMeta* m) {
+  return m != nullptr && m->internal == EFFECT_INTERNAL_LOUDNESS;
+}
+
+bool Effect::ClipAlreadyHas(const Clip* c, const EffectMeta* m) {
+  if (c == nullptr || !IsSingleInstance(m)) return false;
+  for (const auto& e : c->effects) {
+    if (e && e->meta && e->meta->internal == m->internal) return true;
+  }
+  return false;
+}
+
 EffectPtr Effect::Create(Clip* c, const EffectMeta* em) {
   if (em->internal >= 0 && em->internal < EFFECT_INTERNAL_COUNT) {
     // must be an internal effect

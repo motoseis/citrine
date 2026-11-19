@@ -1011,6 +1011,13 @@ void PreferencesDialog::setup_ui() {
 
   row++;
 
+  // Audio -> Apply Loudness to New Audio Clips
+  QCheckBox* loudness_on_audio_clips = new QCheckBox(tr("Apply Loudness to New Audio Clips"));
+  AddBoolPair(loudness_on_audio_clips, &amber::CurrentConfig.loudness_on_audio_clips);
+  audio_tab_layout->addWidget(loudness_on_audio_clips, row, 0, 1, 2);
+
+  row++;
+
   // Audio -> Combine Stereo Waveform
   QCheckBox* combined_waveforms = new QCheckBox(tr("Combine Stereo Channels into One Waveform"));
   AddBoolPair(combined_waveforms, &amber::CurrentConfig.combined_waveforms);

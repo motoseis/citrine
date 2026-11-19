@@ -274,6 +274,7 @@ class Timeline : public Panel {
   void unfreeze_frame();
   void toggle_audio_track_mute(int track);
   void toggle_video_track_hidden(int track);
+  void add_loudness_to_selected_audio();
 
   void zoom_in();
   void zoom_out();

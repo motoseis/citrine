@@ -274,7 +274,8 @@ void Timeline::paste(bool insert) {
 
             if (found >= 0 && skip) {
               // do nothing
-            } else if (found >= 0 && replace) {
+            } else if (found >= 0 && (replace || Effect::IsSingleInstance(e->meta))) {
+              // single-instance effects (Loudness) are replaced rather than added a second time
               ca->append(new EffectDeleteCommand(c->effects.at(found).get()));
 
               ca->append(new AddEffectCommand(c, e->copy(c), nullptr, found));

@@ -552,6 +552,13 @@ struct Config {
   bool add_default_effects_to_clips{true};
 
   /**
+   * @brief Apply Loudness to new audio clips
+   *
+   * **TRUE** if new audio clips get the Loudness effect, placed before the default Volume and Pan effects.
+   */
+  bool loudness_on_audio_clips{false};
+
+  /**
    * @brief Invert Timeline scroll axes
    *
    * **TRUE** if scrolling vertically on the Timeline should scroll it horizontally
