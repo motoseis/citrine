@@ -16,6 +16,9 @@ bool deserialize_clipboard_from_xml(const QByteArray& xml, QVector<MediaPtr>& im
 
 void push_clipboard_to_system();
 
+// Puts already-serialised clipboard XML (for example a saved clip group) on the system clipboard
+void set_system_clipboard_xml(const QByteArray& xml);
+
 bool pull_clipboard_from_system(QVector<MediaPtr>& imported_media);
 
 }  // namespace amber

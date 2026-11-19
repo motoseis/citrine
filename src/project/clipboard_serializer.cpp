@@ -306,6 +306,12 @@ void push_clipboard_to_system() {
   QGuiApplication::clipboard()->setMimeData(mime);
 }
 
+void set_system_clipboard_xml(const QByteArray& xml) {
+  auto* mime = new QMimeData();
+  mime->setData(kClipboardMime, xml);
+  QGuiApplication::clipboard()->setMimeData(mime);
+}
+
 bool pull_clipboard_from_system(QVector<MediaPtr>& imported_media) {
   const QMimeData* mime = QGuiApplication::clipboard()->mimeData();
   if (mime == nullptr || !mime->hasFormat(kClipboardMime)) return false;

@@ -56,6 +56,11 @@ void TimelineWidget::show_context_menu(const QPoint& pos) {
 
     amber::MenuHelper.make_edit_functions_menu(&menu, !selected_clips.isEmpty());
 
+    if (!selected_clips.isEmpty()) {
+      menu.addAction(tr("Save Clip Group..."), panel_timeline, &Timeline::save_clip_group);
+    }
+    menu.addAction(tr("Load Clip Group..."), panel_timeline, &Timeline::load_clip_group);
+
     if (selected_clips.isEmpty()) {
       // no clips are selected
 

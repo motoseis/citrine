@@ -275,6 +275,8 @@ class Timeline : public Panel {
   void toggle_audio_track_mute(int track);
   void toggle_video_track_hidden(int track);
   void add_loudness_to_selected_audio();
+  void save_clip_group();
+  void load_clip_group();
 
   void zoom_in();
   void zoom_out();

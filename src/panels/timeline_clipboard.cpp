@@ -20,6 +20,8 @@
 
 #include "timeline.h"
 
+#include <QFile>
+#include <QFileDialog>
 #include <QMessageBox>
 #include <QCheckBox>
 #include <QPushButton>
@@ -294,4 +296,51 @@ void Timeline::paste(bool insert) {
       update_ui(true);
     }
   }
+}
+
+// A clip group is the clipboard XML for the selected clips, with their effects, saved to a file
+void Timeline::save_clip_group() {
+  if (amber::ActiveSequence == nullptr) return;
+  if (amber::ActiveSequence->SelectedClips().isEmpty()) return;
+
+  copy(false);
+  QByteArray xml = amber::serialize_clipboard_to_xml();
+  if (xml.isEmpty()) return;
+
+  QString path = QFileDialog::getSaveFileName(this, tr("Save Clip Group"), QString(),
+                                              tr("Citrine clip group (*.citrineclips)"));
+  if (path.isEmpty()) return;
+  if (!path.endsWith(QLatin1String(".citrineclips"), Qt::CaseInsensitive)) path += QLatin1String(".citrineclips");
+
+  QFile file(path);
+  if (!file.open(QIODevice::WriteOnly) || file.write(xml) != xml.size()) {
+    QMessageBox::warning(this, tr("Save Clip Group"), tr("Could not write the clip group to %1.").arg(path));
+    return;
+  }
+  file.close();
+}
+
+// Pastes a saved clip group at the playhead, using the normal paste so media is imported as needed
+void Timeline::load_clip_group() {
+  if (amber::ActiveSequence == nullptr) return;
+
+  QString path = QFileDialog::getOpenFileName(this, tr("Load Clip Group"), QString(),
+                                              tr("Citrine clip group (*.citrineclips);;All files (*)"));
+  if (path.isEmpty()) return;
+
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) {
+    QMessageBox::warning(this, tr("Load Clip Group"), tr("Could not read %1.").arg(path));
+    return;
+  }
+  QByteArray xml = file.readAll();
+  file.close();
+
+  if (!xml.contains("amber-clipboard")) {
+    QMessageBox::warning(this, tr("Load Clip Group"), tr("%1 is not a clip group.").arg(path));
+    return;
+  }
+
+  amber::set_system_clipboard_xml(xml);
+  paste(false);
 }
