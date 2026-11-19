@@ -90,6 +90,23 @@ void TimelineWidget::show_context_menu(const QPoint& pos) {
       menu.addAction(tr("&Speed/Duration"), amber::Global.get(), &OliveGlobal::open_speed_dialog);
 
       if (audio_clips_are_selected) {
+        // mute or unmute the audio track of the first selected audio clip
+        int audio_track = -1;
+        Sequence* audio_sequence = nullptr;
+        for (auto selected_clip : selected_clips) {
+          if (selected_clip->track() >= 0) {
+            audio_track = selected_clip->track();
+            audio_sequence = selected_clip->sequence;
+            break;
+          }
+        }
+        if (audio_sequence != nullptr) {
+          bool track_muted = audio_sequence->muted_audio_tracks.contains(audio_track);
+          QAction* mute_action = menu.addAction(track_muted ? tr("Unmute Track") : tr("Mute Track"));
+          connect(mute_action, &QAction::triggered, panel_timeline,
+                  [audio_track]() { panel_timeline->toggle_audio_track_mute(audio_track); });
+        }
+
         menu.addAction(tr("Auto-Cut Silence"), amber::Global.get(), &OliveGlobal::open_autocut_silence_dialog);
       }
 

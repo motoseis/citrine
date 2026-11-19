@@ -78,6 +78,7 @@
 #include "effects/internal/timecodeeffect.h"
 #include "effects/internal/toneeffect.h"
 #include "effects/internal/transformeffect.h"
+#include "effects/internal/loudnesseffect.h"
 #include "effects/internal/volumeeffect.h"
 #include "effects/internal/vsthost.h"
 
@@ -129,6 +130,8 @@ EffectPtr Effect::Create(Clip* c, const EffectMeta* em) {
         return std::make_shared<VolumeEffect>(c, em);
       case EFFECT_INTERNAL_PAN:
         return std::make_shared<PanEffect>(c, em);
+      case EFFECT_INTERNAL_LOUDNESS:
+        return std::make_shared<LoudnessEffect>(c, em);
       case EFFECT_INTERNAL_TONE:
         return std::make_shared<ToneEffect>(c, em);
       case EFFECT_INTERNAL_SHAKE:

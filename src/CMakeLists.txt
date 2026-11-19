@@ -262,6 +262,8 @@ set(OLIVE_SOURCES
   effects/internal/transformeffect.h
   effects/internal/voideffect.cpp
   effects/internal/voideffect.h
+  effects/internal/loudnesseffect.cpp
+  effects/internal/loudnesseffect.h
   effects/internal/volumeeffect.cpp
   effects/internal/volumeeffect.h
   effects/internal/vsthost.cpp
@@ -422,6 +424,8 @@ set(OLIVE_SOURCES
   ui/timelineheader.h
   ui/timelinetools.h
   ui/timelinewidget.cpp
+  ui/trackheaderwidget.cpp
+  ui/trackheaderwidget.h
   ui/timelinewidget_ghosts.cpp
   ui/timelinewidget_menu.cpp
   ui/timelinewidget_paint.cpp

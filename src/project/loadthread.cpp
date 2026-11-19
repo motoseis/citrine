@@ -508,6 +508,14 @@ void LoadThread::parse_sequence_attributes(QXmlStreamReader& stream, SequencePtr
       s->workarea_out = attr.value().toLong();
     } else if (attr.name() == QLatin1String("label")) {
       color_label = attr.value().toInt();
+    } else if (attr.name() == QLatin1String("mutedAudio")) {
+      for (const QString& track : attr.value().toString().split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+        s->muted_audio_tracks.insert(track.toInt());
+      }
+    } else if (attr.name() == QLatin1String("hiddenVideo")) {
+      for (const QString& track : attr.value().toString().split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+        s->hidden_video_tracks.insert(track.toInt());
+      }
     }
   }
 

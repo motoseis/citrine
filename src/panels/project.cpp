@@ -1228,6 +1228,18 @@ void Project::save_folder(QXmlStreamWriter& stream, int type, bool set_ids_only,
             stream.writeAttribute("workarea", QString::number(s->using_workarea));
             stream.writeAttribute("workareaIn", QString::number(s->workarea_in));
             stream.writeAttribute("workareaOut", QString::number(s->workarea_out));
+            if (!s->muted_audio_tracks.isEmpty()) {
+              QStringList muted;
+              for (int track : s->muted_audio_tracks) muted.append(QString::number(track));
+              muted.sort();
+              stream.writeAttribute("mutedAudio", muted.join(QLatin1Char(',')));
+            }
+            if (!s->hidden_video_tracks.isEmpty()) {
+              QStringList hidden;
+              for (int track : s->hidden_video_tracks) hidden.append(QString::number(track));
+              hidden.sort();
+              stream.writeAttribute("hiddenVideo", hidden.join(QLatin1Char(',')));
+            }
             if (m->color_label() > 0) {
               stream.writeAttribute("label", QString::number(m->color_label()));
             }

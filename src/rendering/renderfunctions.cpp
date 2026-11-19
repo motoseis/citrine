@@ -564,6 +564,18 @@ static QVector<Clip*> collect_active_clips(Sequence* s, long playhead, ComposeSe
     if (c == nullptr) continue;
     if ((c->track() < 0) != params.video) continue;
 
+    // clips on a muted audio track are silent: leave them out of the mix and release their cacher
+    if (c->track() >= 0 && s->muted_audio_tracks.contains(c->track())) {
+      if (c->IsOpen()) c->Close(false);
+      continue;
+    }
+
+    // clips on a hidden video track are not drawn in the viewer or export
+    if (c->track() < 0 && s->hidden_video_tracks.contains(c->track())) {
+      if (c->IsOpen()) c->Close(false);
+      continue;
+    }
+
     bool clip_is_active = false;
 
     if (c->media() != nullptr && c->media()->get_type() == MEDIA_TYPE_FOOTAGE) {

@@ -53,6 +53,7 @@
 #include "ui/flowlayout.h"
 #include "ui/cursors.h"
 #include "ui/mainwindow.h"
+#include "engine/undo/undo_timeline.h"
 #include "engine/undo/undostack.h"
 #include "global/debug.h"
 #include "ui/menu.h"
@@ -1798,4 +1799,24 @@ void Timeline::unfreeze_frame() {
   } else {
     delete ca;
   }
+}
+
+void Timeline::toggle_audio_track_mute(int track) {
+  if (amber::ActiveSequence == nullptr) return;
+
+  bool mute = !amber::ActiveSequence->muted_audio_tracks.contains(track);
+  ComboAction* ca = new ComboAction(mute ? tr("Mute Track") : tr("Unmute Track"));
+  ca->append(new SetAudioTrackMuteAction(amber::ActiveSequence.get(), track, mute));
+  amber::UndoStack.push(ca);
+  update_ui(true);
+}
+
+void Timeline::toggle_video_track_hidden(int track) {
+  if (amber::ActiveSequence == nullptr) return;
+
+  bool hide = !amber::ActiveSequence->hidden_video_tracks.contains(track);
+  ComboAction* ca = new ComboAction(hide ? tr("Hide Track") : tr("Show Track"));
+  ca->append(new SetVideoTrackHiddenAction(amber::ActiveSequence.get(), track, hide));
+  amber::UndoStack.push(ca);
+  update_ui(true);
 }

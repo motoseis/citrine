@@ -272,6 +272,8 @@ class Timeline : public Panel {
 
   void freeze_frame();
   void unfreeze_frame();
+  void toggle_audio_track_mute(int track);
+  void toggle_video_track_hidden(int track);
 
   void zoom_in();
   void zoom_out();
@@ -314,6 +316,7 @@ class Timeline : public Panel {
   bool panel_height_dirty_{true};
 
   QWidget* timeline_area_widget;
+  class TrackHeaderWidget* track_headers{nullptr};
   TimelineWidget* timeline_area;
   QWidget* editAreas;
   QScrollBar* verticalScrollbar;

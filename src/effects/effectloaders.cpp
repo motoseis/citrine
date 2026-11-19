@@ -66,6 +66,10 @@ void load_internal_effects() {
   em.internal = EFFECT_INTERNAL_TONE;
   effects.append(em);
 
+  em.name = "Loudness";
+  em.internal = EFFECT_INTERNAL_LOUDNESS;
+  effects.append(em);
+
   em.name = "Noise";
   em.internal = EFFECT_INTERNAL_NOISE;
   effects.append(em);

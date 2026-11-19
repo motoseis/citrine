@@ -136,4 +136,28 @@ private:
   bool sorted;
 };
 
+class SetAudioTrackMuteAction : public OliveAction {
+public:
+  SetAudioTrackMuteAction(Sequence* s, int track, bool mute);
+  void doUndo() override;
+  void doRedo() override;
+private:
+  Sequence* sequence_;
+  int track_;
+  bool old_muted_;
+  bool new_muted_;
+};
+
+class SetVideoTrackHiddenAction : public OliveAction {
+public:
+  SetVideoTrackHiddenAction(Sequence* s, int track, bool hide);
+  void doUndo() override;
+  void doRedo() override;
+private:
+  Sequence* sequence_;
+  int track_;
+  bool old_hidden_;
+  bool new_hidden_;
+};
+
 #endif // UNDO_TIMELINE_H

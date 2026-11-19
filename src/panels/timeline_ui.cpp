@@ -31,6 +31,7 @@
 #include "panels/panels.h"
 #include "rendering/renderfunctions.h"
 #include "ui/audiomonitor.h"
+#include "ui/trackheaderwidget.h"
 #include "ui/cursors.h"
 #include "ui/flowlayout.h"
 #include "ui/icons.h"
@@ -172,8 +173,17 @@ void Timeline::setup_ui() {
   breadcrumb_label->hide();
   timeline_area_layout->addWidget(breadcrumb_label);
 
+  // the ruler and scrollbar start where the timeline starts, after the track header column
+  QWidget* ruler_row = new QWidget();
+  QHBoxLayout* ruler_layout = new QHBoxLayout(ruler_row);
+  ruler_layout->setSpacing(0);
+  ruler_layout->setContentsMargins(0, 0, 0, 0);
+  QWidget* ruler_spacer = new QWidget();
+  ruler_spacer->setFixedWidth(TrackHeaderWidget::kWidth);
+  ruler_layout->addWidget(ruler_spacer);
   headers = new TimelineHeader();
-  timeline_area_layout->addWidget(headers);
+  ruler_layout->addWidget(headers);
+  timeline_area_layout->addWidget(ruler_row);
 
   editAreas = new QWidget();
   QHBoxLayout* editAreaLayout = new QHBoxLayout(editAreas);
@@ -187,6 +197,10 @@ void Timeline::setup_ui() {
 
   timeline_area = new TimelineWidget();
   timeline_area->setFocusPolicy(Qt::ClickFocus);
+
+  // track header column to the left of the timeline, sharing its track rows
+  track_headers = new TrackHeaderWidget(timeline_area);
+  timelineContainerLayout->addWidget(track_headers);
   timelineContainerLayout->addWidget(timeline_area);
 
   verticalScrollbar = new QScrollBar();
@@ -204,7 +218,15 @@ void Timeline::setup_ui() {
   horizontalScrollBar->setSingleStep(20);
   horizontalScrollBar->setOrientation(Qt::Horizontal);
 
-  timeline_area_layout->addWidget(horizontalScrollBar);
+  QWidget* scrollbar_row = new QWidget();
+  QHBoxLayout* scrollbar_layout = new QHBoxLayout(scrollbar_row);
+  scrollbar_layout->setSpacing(0);
+  scrollbar_layout->setContentsMargins(0, 0, 0, 0);
+  QWidget* scrollbar_spacer = new QWidget();
+  scrollbar_spacer->setFixedWidth(TrackHeaderWidget::kWidth);
+  scrollbar_layout->addWidget(scrollbar_spacer);
+  scrollbar_layout->addWidget(horizontalScrollBar);
+  timeline_area_layout->addWidget(scrollbar_row);
 
   horizontalLayout->addWidget(timeline_area_widget);
 
@@ -269,6 +291,7 @@ void Timeline::resizeEvent(QResizeEvent*) {
 void Timeline::repaint_timeline() {
   seam_y_dirty_ = true;
   panel_height_dirty_ = true;
+  if (track_headers != nullptr) track_headers->update();
   if (!block_repaints) {
     if (amber::ActiveSequence != nullptr && !horizontalScrollBar->isSliderDown() &&
         !horizontalScrollBar->is_resizing() && panel_sequence_viewer->playing && !zoom_just_changed) {

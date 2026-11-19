@@ -21,6 +21,7 @@
 #ifndef SEQUENCE_H
 #define SEQUENCE_H
 
+#include <QSet>
 #include <QVector>
 #include <memory>
 
@@ -61,6 +62,12 @@ class Sequence {
   long workarea_out{0};
 
   bool wrapper_sequence{false};
+
+  // audio track indexes whose clips are silent in playback and export
+  QSet<int> muted_audio_tracks;
+
+  // video track indexes (negative) whose clips are hidden from the viewer and export
+  QSet<int> hidden_video_tracks;
 
   int save_id;
 

@@ -51,6 +51,11 @@ public:
   explicit TimelineWidget(QWidget *parent = nullptr);
   QScrollBar* scrollBar;
 
+  // Top edge of a track's row, and the track at a y position, in this widget's coordinates.
+  // Used by the track header column, which sits beside this widget and shares its rows.
+  int trackScreenY(int track) { return getScreenPointFromTrack(track); }
+  int trackAtScreenY(int y) { return getTrackFromScreenPoint(y); }
+
 public slots:
 
 protected:

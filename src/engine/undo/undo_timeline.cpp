@@ -309,3 +309,61 @@ void DeleteMarkerAction::doRedo() {
   }
   sorted = true;
 }
+
+SetAudioTrackMuteAction::SetAudioTrackMuteAction(Sequence* s, int track, bool mute)
+    : sequence_(s), track_(track), new_muted_(mute) {
+  old_muted_ = (sequence_ != nullptr) && sequence_->muted_audio_tracks.contains(track_);
+}
+
+void SetAudioTrackMuteAction::doUndo() {
+  if (!sequence_) {
+    qWarning() << "SetAudioTrackMuteAction::doUndo: sequence is null";
+    return;
+  }
+  if (old_muted_) {
+    sequence_->muted_audio_tracks.insert(track_);
+  } else {
+    sequence_->muted_audio_tracks.remove(track_);
+  }
+}
+
+void SetAudioTrackMuteAction::doRedo() {
+  if (!sequence_) {
+    qWarning() << "SetAudioTrackMuteAction::doRedo: sequence is null";
+    return;
+  }
+  if (new_muted_) {
+    sequence_->muted_audio_tracks.insert(track_);
+  } else {
+    sequence_->muted_audio_tracks.remove(track_);
+  }
+}
+
+SetVideoTrackHiddenAction::SetVideoTrackHiddenAction(Sequence* s, int track, bool hide)
+    : sequence_(s), track_(track), new_hidden_(hide) {
+  old_hidden_ = (sequence_ != nullptr) && sequence_->hidden_video_tracks.contains(track_);
+}
+
+void SetVideoTrackHiddenAction::doUndo() {
+  if (!sequence_) {
+    qWarning() << "SetVideoTrackHiddenAction::doUndo: sequence is null";
+    return;
+  }
+  if (old_hidden_) {
+    sequence_->hidden_video_tracks.insert(track_);
+  } else {
+    sequence_->hidden_video_tracks.remove(track_);
+  }
+}
+
+void SetVideoTrackHiddenAction::doRedo() {
+  if (!sequence_) {
+    qWarning() << "SetVideoTrackHiddenAction::doRedo: sequence is null";
+    return;
+  }
+  if (new_hidden_) {
+    sequence_->hidden_video_tracks.insert(track_);
+  } else {
+    sequence_->hidden_video_tracks.remove(track_);
+  }
+}

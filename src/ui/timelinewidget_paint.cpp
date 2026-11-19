@@ -317,7 +317,12 @@ void TimelineWidget::drawClips(QPainter& p) {
 
             // draw thumbnail/waveform
             long media_length = clip->media_length();
-            if (clip->track() < 0) {
+            if (clip->sequence != nullptr && clip->track() < 0 && clip->sequence->hidden_video_tracks.contains(clip->track())) {
+              // hidden video track: no thumbnail, just a label
+              p.setPen(Qt::gray);
+              p.drawText(clip_rect.adjusted(amber::timeline::kClipTextPadding, 0, 0, 0),
+                         Qt::AlignVCenter | Qt::AlignLeft, tr("Hidden"));
+            } else if (clip->track() < 0) {
               // draw thumbnail
               int thumb_y = p.fontMetrics().height()+amber::timeline::kClipTextPadding+amber::timeline::kClipTextPadding;
               if (thumb_x < width() && thumb_y < height()) {
@@ -354,6 +359,11 @@ void TimelineWidget::drawClips(QPainter& p) {
                 draw_checkerboard = true;
                 checkerboard_rect.setLeft(panel_timeline->getTimelineScreenPointFromFrame(clip->media_length() + clip->timeline_in() - clip->clip_in()));
               }
+            } else if (clip->sequence != nullptr && clip->sequence->muted_audio_tracks.contains(clip->track())) {
+              // muted audio track: no waveform, just a label
+              p.setPen(Qt::gray);
+              p.drawText(clip_rect.adjusted(amber::timeline::kClipTextPadding, 0, 0, 0),
+                         Qt::AlignVCenter | Qt::AlignLeft, tr("Muted"));
             } else if (clip_rect.height() >= amber::timeline::kTrackMinHeight) {
               // draw waveform
               p.setPen(QColor(80, 80, 80));
