@@ -200,3 +200,16 @@ v2.1: 261117
 	    have no stored speed, so unfreezing them sets speed to 100%.
 	11. Freeze Frame appears once in the Edit menu. The duplicate entry in the timeline right-click menu has
 	    been removed.
+	12. A track header column sits to the left of the timeline, with one row per track that lines up with the
+	    timeline. Audio rows have an M button to mute the track, and video rows have an eye button to hide it.
+	    The ruler and horizontal scrollbar start after the column, so the playhead lines up with the timeline.
+	13. Muting an audio track leaves its clips out of playback and export. Muted clips show "Muted". Mute a
+	    track with its M button, or right-click an audio clip and choose "Mute Track".
+	14. Hiding a video track leaves its clips out of the viewer and export. Hidden clips show "Hidden". Their
+	    linked audio still plays. Hide a track with its eye button.
+	15. New "Loudness" audio effect in the Effects panel. It is a dynamic leveller: it follows the clip's level
+	    over an analysis window and moves the gain towards a target, within min and max gain and no faster than
+	    a max rate. Its settings are Target Loudness (-18 dBFS), Analysis Window (1000 ms), Min Gain (-12 dB),
+	    Max Gain (+12 dB) and Max Rate (6 dB/s). It measures peak-based level from the waveform analysis, not
+	    LUFS. Quiet passages are not boosted, but low-level noise may be raised because the analysis data is 8-bit.
+	    Mute and hide settings are saved with the project.
