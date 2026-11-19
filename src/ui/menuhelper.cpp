@@ -115,6 +115,9 @@ void MenuHelper::InitializeSharedMenus()
   freeze_frame_ = create_menu_action(nullptr, "freezeframe", panel_timeline, SLOT(freeze_frame()), QKeySequence("Shift+F"));
   freeze_frame_->setParent(this);
 
+  unfreeze_frame_ = create_menu_action(nullptr, "unfreezeframe", panel_timeline, SLOT(unfreeze_frame()));
+  unfreeze_frame_->setParent(this);
+
   go_back_sequence_ = create_menu_action(nullptr, "gobackseq", amber::Global.get(), SLOT(go_back_sequence()), QKeySequence(Qt::Key_Backspace));
   go_back_sequence_->setParent(this);
 
@@ -155,6 +158,7 @@ void MenuHelper::make_clip_functions_menu(QMenu *parent, bool as_submenu) {
   target->addAction(nest_);
   target->addAction(unnest_);
   target->addAction(freeze_frame_);
+  target->addAction(unfreeze_frame_);
 }
 
 void MenuHelper::updateClipActions(const QVector<Clip*>& selected_clips) {
@@ -204,7 +208,7 @@ void MenuHelper::updateClipActions(const QVector<Clip*>& selected_clips) {
   nest_->setVisible(show_nest);
   unnest_->setVisible(show_unnest);
 
-  // Freeze/unfreeze: show unfreeze if any selected clip is frozen
+  // Freeze always freezes; unfreeze is offered only when a selected clip is frozen
   bool any_frozen = false;
   for (auto* c : selected_clips) {
     if (qFuzzyIsNull(c->speed().value)) {
@@ -212,7 +216,7 @@ void MenuHelper::updateClipActions(const QVector<Clip*>& selected_clips) {
       break;
     }
   }
-  freeze_frame_->setText(any_frozen ? tr("Unfreeze Frame") : tr("Freeze Frame"));
+  unfreeze_frame_->setVisible(any_frozen);
   speed_duration_->setVisible(!selected_clips.isEmpty());
 }
 
@@ -282,6 +286,7 @@ void MenuHelper::Retranslate()
   three_point_insert_->setText(tr("Insert Edit"));
   three_point_overwrite_->setText(tr("Overwrite Edit"));
   freeze_frame_->setText(tr("Freeze Frame"));
+  unfreeze_frame_->setText(tr("Unfreeze Frame"));
   go_back_sequence_->setText(tr("Go Back to Parent Sequence"));
 }
 

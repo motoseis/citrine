@@ -1265,6 +1265,9 @@ void Project::save_folder(QXmlStreamWriter& stream, int type, bool set_ids_only,
                 stream.writeAttribute("autoscale", QString::number(c->autoscaled()));
                 stream.writeAttribute("speed", QString::number(c->speed().value, 'f', 10));
                 stream.writeAttribute("maintainpitch", QString::number(c->speed().maintain_audio_pitch));
+                if (c->speed().freeze_hold) {
+                  stream.writeAttribute("freezehold", "1");
+                }
                 stream.writeAttribute("reverse", QString::number(c->reversed()));
                 if (c->loop_mode() != kLoopNone) {
                   stream.writeAttribute("loop", QString::number(c->loop_mode()));

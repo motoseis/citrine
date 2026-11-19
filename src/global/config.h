@@ -658,6 +658,13 @@ struct Config {
   int default_still_length{100};
 
   /**
+   * @brief Default freeze frame length
+   *
+   * The duration in seconds of the still inserted by Freeze Frame. It can be trimmed on the timeline afterwards.
+   */
+  double freeze_frame_seconds{2.0};
+
+  /**
    * @brief Sticky keyframe type
    *
    * When **TRUE**, changing a keyframe's type in the properties dialog also updates

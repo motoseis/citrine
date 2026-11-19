@@ -291,6 +291,7 @@ void PreferencesDialog::accept() {
 
   amber::CurrentConfig.effect_textbox_lines = effect_textbox_lines_field->value();
   amber::CurrentConfig.frame_skip_step = frame_skip_step_field->value();
+  amber::CurrentConfig.freeze_frame_seconds = freeze_frame_seconds_field->value();
   amber::CurrentConfig.default_still_length = static_cast<int>(default_still_length_slider->value());
   amber::CurrentConfig.autorecovery_enabled = autorecovery_enabled_check->isChecked();
   amber::CurrentConfig.autorecovery_interval = static_cast<int>(autorecovery_interval_slider->value());
@@ -753,10 +754,6 @@ void PreferencesDialog::setup_ui() {
   AddBoolPair(invert_timeline_scroll_axes, &amber::CurrentConfig.invert_timeline_scroll_axes);
   behavior_tab_layout->Add(invert_timeline_scroll_axes);
 
-  QCheckBox* rectified_waveforms = new QCheckBox(tr("Rectified Waveforms (draw the positive side only, from the bottom of the clip)"));
-  AddBoolPair(rectified_waveforms, &amber::CurrentConfig.rectified_waveforms);
-  behavior_tab_layout->Add(rectified_waveforms);
-
   QCheckBox* enable_drag_files_to_timeline = new QCheckBox(tr("Enable Drag Files to Timeline"));
   AddBoolPair(enable_drag_files_to_timeline, &amber::CurrentConfig.enable_drag_files_to_timeline);
   behavior_tab_layout->Add(enable_drag_files_to_timeline);
@@ -792,6 +789,20 @@ void PreferencesDialog::setup_ui() {
   frame_skip_layout->addWidget(frame_skip_step_field);
   frame_skip_layout->addStretch();
   behavior_tab_layout->Add(frame_skip_row);
+
+  QWidget* freeze_frame_row = new QWidget(behavior_tab);
+  QHBoxLayout* freeze_frame_layout = new QHBoxLayout(freeze_frame_row);
+  freeze_frame_layout->setContentsMargins(0, 0, 0, 0);
+  freeze_frame_layout->addWidget(new QLabel(tr("Freeze Frame Length:"), behavior_tab));
+  freeze_frame_seconds_field = new QDoubleSpinBox(behavior_tab);
+  freeze_frame_seconds_field->setMinimum(0.1);
+  freeze_frame_seconds_field->setMaximum(3600.0);
+  freeze_frame_seconds_field->setDecimals(2);
+  freeze_frame_seconds_field->setSuffix(tr(" s"));
+  freeze_frame_seconds_field->setValue(amber::CurrentConfig.freeze_frame_seconds);
+  freeze_frame_layout->addWidget(freeze_frame_seconds_field);
+  freeze_frame_layout->addStretch();
+  behavior_tab_layout->Add(freeze_frame_row);
 
   // Keyframe defaults
   QWidget* keyframe_defaults_row = new QWidget(behavior_tab);
@@ -997,6 +1008,13 @@ void PreferencesDialog::setup_ui() {
   QCheckBox* enable_audio_scrubbing = new QCheckBox(tr("Audio Scrubbing"));
   AddBoolPair(enable_audio_scrubbing, &amber::CurrentConfig.enable_audio_scrubbing);
   audio_tab_layout->addWidget(enable_audio_scrubbing, row, 0, 1, 2);
+
+  row++;
+
+  // Audio -> Rectified Waveforms
+  QCheckBox* rectified_waveforms = new QCheckBox(tr("Rectified Waveforms (draw the positive side only, from the bottom of the clip)"));
+  AddBoolPair(rectified_waveforms, &amber::CurrentConfig.rectified_waveforms);
+  audio_tab_layout->addWidget(rectified_waveforms, row, 0, 1, 2);
 
   row++;
 

@@ -1673,43 +1673,36 @@ void Timeline::three_point_edit(bool insert) {
 void Timeline::freeze_frame() {
   if (amber::ActiveSequence == nullptr) return;
 
-  // If selected clips are frozen, unfreeze them instead (toggle)
-  QVector<Clip*> selected = amber::ActiveSequence->SelectedClips();
-  if (!selected.isEmpty()) {
-    bool any_frozen = false;
-    for (auto* c : selected) {
-      if (qFuzzyIsNull(c->speed().value)) {
-        any_frozen = true;
-        break;
-      }
-    }
-    if (any_frozen) {
-      unfreeze_frame();
-      return;
-    }
-  }
+  Sequence* seq = amber::ActiveSequence.get();
+  long playhead = seq->playhead;
 
-  long playhead = amber::ActiveSequence->playhead;
-
-  // Find video clips at the playhead (audio is not frozen — it would produce a buzz artifact)
-  QVector<int> clip_indexes;
-  for (int i = 0; i < amber::ActiveSequence->clips.size(); i++) {
-    Clip* c = amber::ActiveSequence->clips.at(i).get();
+  // A freeze needs a video clip under the playhead to hold
+  bool video_at_playhead = false;
+  for (const ClipPtr& c : seq->clips) {
     if (c != nullptr && c->track() < 0 && c->timeline_in() < playhead && c->timeline_out() > playhead) {
-      clip_indexes.append(i);
+      video_at_playhead = true;
+      break;
     }
   }
-  if (clip_indexes.isEmpty()) return;
+  if (!video_at_playhead) return;
+
+  // length of the still, from the Freeze Frame Length preference (in seconds)
+  long hold_length = qMax(1L, static_cast<long>(qRound(amber::CurrentConfig.freeze_frame_seconds * seq->frame_rate)));
 
   ComboAction* ca = new ComboAction(tr("Freeze Frame"));
+
+  // Split every clip that crosses the playhead, video and audio alike, so the insert below moves
+  // all tracks together and keeps audio in sync with the picture
   QVector<int> pre_clips;
   QVector<ClipPtr> post_clips;
-
-  for (int idx : clip_indexes) {
-    ClipPtr post = split_clip(ca, true, idx, playhead);
-    if (post != nullptr) {
-      pre_clips.append(idx);
-      post_clips.append(post);
+  for (int i = 0; i < seq->clips.size(); i++) {
+    Clip* c = seq->clips.at(i).get();
+    if (c != nullptr && c->timeline_in() < playhead && c->timeline_out() > playhead) {
+      ClipPtr post = split_clip(ca, true, i, playhead);
+      if (post != nullptr) {
+        pre_clips.append(i);
+        post_clips.append(post);
+      }
     }
   }
 
@@ -1718,18 +1711,38 @@ void Timeline::freeze_frame() {
     return;
   }
 
+  // Make room for the still: everything starting at or after the playhead moves right
+  ripple_clips(ca, seq, playhead, hold_length);
+
   // Relink split clips
   relink_clips_using_ids(pre_clips, post_clips);
 
-  // Set speed=0 on all post clips (the frozen halves)
-  for (auto& post : post_clips) {
-    ClipSpeed frozen;
-    frozen.value = 0.0;
-    frozen.maintain_audio_pitch = false;
-    post->set_speed(frozen);
+  // The source clips keep their speed; the still is a separate clip that holds the playhead frame
+  ClipSpeed frozen;
+  frozen.value = 0.0;
+  frozen.maintain_audio_pitch = false;
+  frozen.freeze_hold = true;
+
+  QVector<ClipPtr> still_clips;
+  for (const ClipPtr& post : post_clips) {
+    long post_out = post->timeline_out();
+
+    if (post->track() < 0) {
+      ClipPtr still = post->copy(seq);
+      still->set_timeline_out(playhead + hold_length);
+      still->set_speed(frozen);
+      still_clips.append(still);
+    }
+
+    // the rest of the clip resumes after the still
+    post->set_timeline_in(playhead + hold_length);
+    post->set_timeline_out(post_out + hold_length);
   }
 
-  ca->append(new AddClipCommand(amber::ActiveSequence.get(), post_clips));
+  ca->append(new AddClipCommand(seq, post_clips));
+  if (!still_clips.isEmpty()) {
+    ca->append(new AddClipCommand(seq, still_clips));
+  }
   amber::UndoStack.push(ca);
   update_ui(true);
 }
@@ -1737,17 +1750,46 @@ void Timeline::freeze_frame() {
 void Timeline::unfreeze_frame() {
   if (amber::ActiveSequence == nullptr) return;
 
-  QVector<Clip*> frozen_clips = amber::ActiveSequence->SelectedClips();
-  if (frozen_clips.isEmpty()) return;
+  Sequence* seq = amber::ActiveSequence.get();
+
+  QVector<Clip*> selected = seq->SelectedClips();
+  if (selected.isEmpty()) return;
 
   ComboAction* ca = new ComboAction(tr("Unfreeze Frame"));
   bool changed = false;
 
-  for (auto* c : frozen_clips) {
-    if (qFuzzyIsNull(c->speed().value)) {
+  // Stills from Freeze Frame are removed and the gap closed. Older frozen clips, which have no
+  // record of their original speed, go back to normal speed.
+  QVector<int> still_indexes;
+  QMap<long, long> gaps;  // gap end -> gap length
+  for (auto* c : selected) {
+    if (!qFuzzyIsNull(c->speed().value)) continue;
+
+    if (c->speed().freeze_hold) {
+      for (int i = 0; i < seq->clips.size(); i++) {
+        if (seq->clips.at(i).get() == c) {
+          still_indexes.append(i);
+          break;
+        }
+      }
+      gaps.insert(c->timeline_out(), c->timeline_out() - c->timeline_in());
+    } else {
       ca->append(new SetSpeedAction(c, 1.0));
       changed = true;
     }
+  }
+
+  // delete from the highest index down so the earlier indexes stay valid
+  std::sort(still_indexes.begin(), still_indexes.end(), std::greater<int>());
+  for (int idx : still_indexes) {
+    ca->append(new DeleteClipAction(seq, idx));
+    changed = true;
+  }
+
+  // close the gaps, latest first so earlier gaps are not shifted by later ones
+  QList<long> gap_ends = gaps.keys();
+  for (int i = gap_ends.size() - 1; i >= 0; i--) {
+    ripple_clips(ca, seq, gap_ends.at(i), -gaps.value(gap_ends.at(i)));
   }
 
   if (changed) {

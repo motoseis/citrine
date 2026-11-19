@@ -411,6 +411,8 @@ void LoadThread::parse_clip_attributes(QXmlStreamReader& stream, ClipPtr c, int&
       speed_info.value = attr.value().toDouble();
     } else if (attr.name() == QLatin1String("maintainpitch")) {
       speed_info.maintain_audio_pitch = (attr.value() == QLatin1String("1"));
+    } else if (attr.name() == QLatin1String("freezehold")) {
+      speed_info.freeze_hold = (attr.value() == QLatin1String("1"));
     } else if (attr.name() == QLatin1String("reverse")) {
       c->set_reversed(attr.value() == QLatin1String("1"));
     } else if (attr.name() == QLatin1String("loop")) {

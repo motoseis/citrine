@@ -120,6 +120,7 @@ constexpr IntEntry kIntEntries[] = {
 
 constexpr DoubleEntry kDoubleEntries[] = {
     {"CustomTitleSafeRatio", &Config::custom_title_safe_ratio},
+    {"FreezeFrameSeconds", &Config::freeze_frame_seconds},
     {"PreviousFrameQueueSize", &Config::previous_queue_size},
     {"UpcomingFrameQueueSize", &Config::upcoming_queue_size},
     {"DefaultSequenceFrameRate", &Config::default_sequence_framerate},
@@ -236,6 +237,7 @@ void Config::save(QString path) {
   stream.writeTextElement("ShowTitleSafeArea", QString::number(show_title_safe_area));
   stream.writeTextElement("UseCustomTitleSafeRatio", QString::number(use_custom_title_safe_ratio));
   stream.writeTextElement("CustomTitleSafeRatio", QString::number(custom_title_safe_ratio));
+  stream.writeTextElement("FreezeFrameSeconds", QString::number(freeze_frame_seconds));
   stream.writeTextElement("EnableDragFilesToTimeline", QString::number(enable_drag_files_to_timeline));
   stream.writeTextElement("AutoscaleByDefault", QString::number(autoscale_by_default));
   stream.writeTextElement("RecordingMode", QString::number(recording_mode));

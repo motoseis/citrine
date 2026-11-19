@@ -49,6 +49,8 @@ struct ClipSpeed {
   ClipSpeed();
   double value{1.0};
   bool maintain_audio_pitch{false};
+  // true for a still clip inserted by Freeze Frame (speed 0, its own length), so Unfreeze can remove it
+  bool freeze_hold{false};
 };
 
 using ClipPtr = std::shared_ptr<Clip>;

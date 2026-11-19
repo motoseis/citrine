@@ -217,6 +217,8 @@ private:
 
   QSpinBox* frame_skip_step_field;
 
+  QDoubleSpinBox* freeze_frame_seconds_field;
+
   /**
    * @brief UI widget for selecting the output audio device
    */

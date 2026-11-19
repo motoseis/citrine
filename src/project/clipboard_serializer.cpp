@@ -40,6 +40,9 @@ void write_clip(QXmlStreamWriter& stream, const ClipPtr& c, int load_id) {
   stream.writeAttribute("autoscale", QString::number(c->autoscaled()));
   stream.writeAttribute("speed", QString::number(c->speed().value, 'f', 10));
   stream.writeAttribute("maintainpitch", QString::number(c->speed().maintain_audio_pitch));
+  if (c->speed().freeze_hold) {
+    stream.writeAttribute("freezehold", "1");
+  }
   stream.writeAttribute("reverse", QString::number(c->reversed()));
   if (c->loop_mode() != kLoopNone) stream.writeAttribute("loop", QString::number(c->loop_mode()));
 
@@ -140,6 +143,7 @@ ClipPtr parse_clip(QXmlStreamReader& stream, ParsedMediaRef& media_ref_out) {
     else if (n == QLatin1String("autoscale")) c->set_autoscaled(attr.value() == QLatin1String("1"));
     else if (n == QLatin1String("speed")) speed_info.value = attr.value().toDouble();
     else if (n == QLatin1String("maintainpitch")) speed_info.maintain_audio_pitch = (attr.value() == QLatin1String("1"));
+    else if (n == QLatin1String("freezehold")) speed_info.freeze_hold = (attr.value() == QLatin1String("1"));
     else if (n == QLatin1String("reverse")) c->set_reversed(attr.value() == QLatin1String("1"));
     else if (n == QLatin1String("loop")) c->set_loop_mode(attr.value().toInt());
   }

@@ -239,6 +239,7 @@ private:
   QAction* three_point_insert_;
   QAction* three_point_overwrite_;
   QAction* freeze_frame_;
+  QAction* unfreeze_frame_;
   QAction* go_back_sequence_;
   QAction* speed_duration_;
 
