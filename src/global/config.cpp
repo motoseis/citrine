@@ -63,6 +63,7 @@ constexpr BoolEntry kBoolEntries[] = {
     {"SelectAlsoSeeks", &Config::select_also_seeks},
     {"PasteSeeks", &Config::paste_seeks},
     {"RectifiedWaveforms", &Config::rectified_waveforms},
+    {"CombinedWaveforms", &Config::combined_waveforms},
     {"ShowTitleSafeArea", &Config::show_title_safe_area},
     {"UseCustomTitleSafeRatio", &Config::use_custom_title_safe_ratio},
     {"EnableDragFilesToTimeline", &Config::enable_drag_files_to_timeline},
@@ -232,6 +233,7 @@ void Config::save(QString path) {
   stream.writeTextElement("PasteSeeks", QString::number(paste_seeks));
   stream.writeTextElement("ImageSequenceFormats", img_seq_formats);
   stream.writeTextElement("RectifiedWaveforms", QString::number(rectified_waveforms));
+  stream.writeTextElement("CombinedWaveforms", QString::number(combined_waveforms));
   stream.writeTextElement("DefaultTransitionLength", QString::number(default_transition_length));
   stream.writeTextElement("TimecodeView", QString::number(timecode_view));
   stream.writeTextElement("ShowTitleSafeArea", QString::number(show_title_safe_area));

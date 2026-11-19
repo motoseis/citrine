@@ -228,6 +228,14 @@ struct Config {
   bool rectified_waveforms{false};
 
   /**
+   * @brief Combine stereo channels into one waveform
+   *
+   * **TRUE** if stereo clips should show one waveform across the whole clip (the louder channel at each point)
+   * instead of one waveform per channel.
+   */
+  bool combined_waveforms{true};
+
+  /**
    * @brief Default transition length
    *
    * The default transition length used when making a transition without the transition tool

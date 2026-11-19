@@ -1011,6 +1011,13 @@ void PreferencesDialog::setup_ui() {
 
   row++;
 
+  // Audio -> Combine Stereo Waveform
+  QCheckBox* combined_waveforms = new QCheckBox(tr("Combine Stereo Channels into One Waveform"));
+  AddBoolPair(combined_waveforms, &amber::CurrentConfig.combined_waveforms);
+  audio_tab_layout->addWidget(combined_waveforms, row, 0, 1, 2);
+
+  row++;
+
   // Audio -> Rectified Waveforms
   QCheckBox* rectified_waveforms = new QCheckBox(tr("Rectified Waveforms (draw the positive side only, from the bottom of the clip)"));
   AddBoolPair(rectified_waveforms, &amber::CurrentConfig.rectified_waveforms);

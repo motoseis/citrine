@@ -83,14 +83,23 @@ void draw_waveform(ClipPtr clip, const FootageStream* ms, long media_length, QPa
   const double half_height = channel_height / 2.0;
   const bool rectified = amber::CurrentConfig.rectified_waveforms;
 
+  // Combined: one band across the whole clip, taken from the louder channel at each point.
+  // Otherwise each channel is drawn in its own lane.
+  const bool combined = amber::CurrentConfig.combined_waveforms && ms->audio_channels > 1;
+  const int lanes = combined ? 1 : ms->audio_channels;
+  // Headroom: peaks stop at 50% of the available height so loud material doesn't fill the whole clip
+  const double kCombinedHeadroom = 0.5;
+  const double combined_half_height =
+      (rectified ? clip_rect.height() : clip_rect.height() / 2.0) * kCombinedHeadroom;
+
   int last_waveform_index = -1;
   int preview_size = ms->audio_preview.size();
 
-  // For each channel, the top and bottom edge of the waveform at every visible pixel column.
-  // The edges are kept as sub-pixel coordinates and filled as one polygon per channel, which
+  // For each lane, the top and bottom edge of the waveform at every visible pixel column.
+  // The edges are kept as sub-pixel coordinates and filled as one polygon per lane, which
   // antialiasing can smooth; per-pixel integer lines looked like steps.
-  QVector<QVector<QPointF>> upper_edges(ms->audio_channels);
-  QVector<QVector<QPointF>> lower_edges(ms->audio_channels);
+  QVector<QVector<QPointF>> upper_edges(lanes);
+  QVector<QVector<QPointF>> lower_edges(lanes);
 
   for (int i=waveform_start;i<waveform_limit;i++) {
     int waveform_index = qFloor((((clip->clip_in() + (double(i)/zoom))/media_length) * preview_size)/divider)*divider;
@@ -106,37 +115,67 @@ void draw_waveform(ClipPtr clip, const FootageStream* ms, long media_length, QPa
     const double x = clip_rect.left() + i + 0.5;
     const double gain = waveform_gain_at(clip, double(i) / zoom);
 
-    for (int j=0;j<ms->audio_channels;j++) {
-      double mid = (rectified) ? clip_rect.top()+channel_height*(j+1) : clip_rect.top()+channel_height*j+(channel_height/2);
+    for (int lane=0;lane<lanes;lane++) {
+      const int first_channel = combined ? 0 : lane;
+      const int last_channel = combined ? ms->audio_channels : lane + 1;
+      const double lane_half = combined ? combined_half_height : half_height;
 
-      int offset_range_start = last_waveform_index+(j*2);
-      int offset_range_end = waveform_index+(j*2);
-      int offset_range_min = qMin(offset_range_start, offset_range_end);
-      int offset_range_max = qMax(offset_range_start, offset_range_end);
+      double mid;
+      if (combined) {
+        mid = rectified ? clip_rect.top()+clip_rect.height() : clip_rect.top()+clip_rect.height()/2.0;
+      } else {
+        mid = (rectified) ? clip_rect.top()+channel_height*(lane+1) : clip_rect.top()+channel_height*lane+(channel_height/2);
+      }
 
-      if (offset_range_min < 0 || offset_range_min + 1 >= preview_size) continue;
+      double min = 0.0;
+      double max = 0.0;
+      bool have_range = false;
 
-      double min = waveform_height(ms->audio_preview.at(offset_range_min), gain, half_height);
-      double max = waveform_height(ms->audio_preview.at(offset_range_min+1), gain, half_height);
+      for (int j=first_channel;j<last_channel;j++) {
+        int offset_range_start = last_waveform_index+(j*2);
+        int offset_range_end = waveform_index+(j*2);
+        int offset_range_min = qMin(offset_range_start, offset_range_end);
+        int offset_range_max = qMax(offset_range_start, offset_range_end);
 
-      if ((offset_range_max + 1) < preview_size) {
+        if (offset_range_min < 0 || offset_range_min + 1 >= preview_size) continue;
+        if ((offset_range_max + 1) >= preview_size) continue;
+
+        double chan_min = waveform_height(ms->audio_preview.at(offset_range_min), gain, lane_half);
+        double chan_max = waveform_height(ms->audio_preview.at(offset_range_min+1), gain, lane_half);
 
         // for waveform drawings, we get the maximum below 0 and maximum above 0 for this waveform range
         for (int k=offset_range_min+2;k<=offset_range_max;k+=2) {
-          min = qMin(min, waveform_height(ms->audio_preview.at(k), gain, half_height));
-          max = qMax(max, waveform_height(ms->audio_preview.at(k+1), gain, half_height));
+          chan_min = qMin(chan_min, waveform_height(ms->audio_preview.at(k), gain, lane_half));
+          chan_max = qMax(chan_max, waveform_height(ms->audio_preview.at(k+1), gain, lane_half));
         }
 
-        if (rectified) {
-          // rectified waveforms start from the bottom and draw upwards
-          // the larger of the two peaks, so the level matches the centred view (min is <= 0, max is >= 0)
-          upper_edges[j].append(QPointF(x, mid - qMax(-min, max)));
-          lower_edges[j].append(QPointF(x, mid));
+        if (!have_range) {
+          min = chan_min;
+          max = chan_max;
+          have_range = true;
+        } else if (combined) {
+          // combined: keep the louder channel's range at this point, not the envelope of both
+          if (qMax(-chan_min, chan_max) > qMax(-min, max)) {
+            min = chan_min;
+            max = chan_max;
+          }
         } else {
-          // non-rectified waveforms start from the center and draw outwards
-          upper_edges[j].append(QPointF(x, mid + min));
-          lower_edges[j].append(QPointF(x, mid + max));
+          min = qMin(min, chan_min);
+          max = qMax(max, chan_max);
         }
+      }
+
+      if (!have_range) continue;
+
+      if (rectified) {
+        // rectified waveforms start from the bottom and draw upwards
+        // the larger of the two peaks, so the level matches the centred view (min is <= 0, max is >= 0)
+        upper_edges[lane].append(QPointF(x, mid - qMax(-min, max)));
+        lower_edges[lane].append(QPointF(x, mid));
+      } else {
+        // non-rectified waveforms start from the center and draw outwards
+        upper_edges[lane].append(QPointF(x, mid + min));
+        lower_edges[lane].append(QPointF(x, mid + max));
       }
     }
     last_waveform_index = waveform_index;
@@ -147,9 +186,9 @@ void draw_waveform(ClipPtr clip, const FootageStream* ms, long media_length, QPa
   p->setRenderHint(QPainter::Antialiasing, true);
   p->setPen(Qt::NoPen);
   // light and semi-transparent so the waveform reads on any clip colour, not as a solid black block
-  p->setBrush(QColor(235, 235, 235, 120));
+  p->setBrush(QColor(170, 215, 255, 200));
 
-  for (int j=0;j<ms->audio_channels;j++) {
+  for (int j=0;j<lanes;j++) {
     if (upper_edges[j].size() < 2) continue;
 
     QPolygonF outline;
