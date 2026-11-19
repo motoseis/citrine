@@ -183,8 +183,20 @@ v2.1: 261117
 	   volume is raised or faded. Peaks that would go past full scale are clipped at the track edge.
 	4. The timeline redraws while a clip's waveform is still being analysed, so waveforms appear without
 	   needing a click or mouse movement.
-	5. Waveforms use a light, semi-transparent fill that reads on any clip colour.
-	6. Preferences > Behavior > "Rectified Waveforms" draws only the positive side of the waveform, from
+	5. Waveforms use a light blue fill that stands out on any clip colour.
+	6. Preferences > Audio > "Rectified Waveforms" draws only the positive side of the waveform, from
 	   the bottom of the clip. It is off by default.
 	7. Audio clips no longer show their name, so the name does not cover the waveform. Video clips keep
 	   their names.
+	8. Stereo clips can show one combined waveform across the whole clip instead of one per channel. Each
+	   point uses the louder channel. Preferences > Audio > "Combine Stereo Channels into One Waveform" controls
+	   this and is on by default. Mono clips are unchanged. Combined peaks stop at half the clip height.
+	9. Freeze Frame inserts a still of a set length at the playhead and moves later clips to make room, on
+	   every track. The still is 2 seconds by default. Preferences > Behavior > "Freeze Frame Length" sets it
+	   in seconds. Trim the still with the Ripple Tool (B) to change its length on the timeline. Audio is silent
+	   during the still.
+	10. Shift+F always freezes. Unfreeze Frame is in the Edit menu when a selected clip is frozen. It removes
+	    the still and closes the gap, and the clip keeps its original speed. Clips frozen by an earlier version
+	    have no stored speed, so unfreezing them sets speed to 100%.
+	11. Freeze Frame appears once in the Edit menu. The duplicate entry in the timeline right-click menu has
+	    been removed.
