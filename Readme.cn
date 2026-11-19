@@ -213,3 +213,13 @@ v2.1: 261117
 	    Max Gain (+12 dB) and Max Rate (6 dB/s). It measures peak-based level from the waveform analysis, not
 	    LUFS. Quiet passages are not boosted, but low-level noise may be raised because the analysis data is 8-bit.
 	    Mute and hide settings are saved with the project.
+	16. New "Color Wheels" effect in the Color category. It has a colour wheel each for Lift, Gamma and Gain, with a
+	    master slider for each. Drag a wheel to set a tint, and double-click it to reset to neutral. Lift changes
+	    the shadows, Gamma the midtones and Gain the whole range. Brightness comes from the master sliders.
+	17. Preferences > Audio > "Apply Loudness to New Audio Clips" adds Loudness to new audio clips, placed before
+	    the default Volume and Pan. It is off by default. It applies to clips dropped from the project bin,
+	    clips from generators, and Insert or Overwrite Edits from the source monitor.
+	18. Right-click audio clips and choose "Add Loudness" to add it to the selected clips. Select everything with
+	    Ctrl+A to apply it to all sound. Loudness can only be on a clip once.
+	19. Loudness levels the start of a clip as well as the rest, because its gain curve starts at the first block's
+	    wanted level.
