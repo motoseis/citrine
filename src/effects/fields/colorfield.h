@@ -20,6 +20,11 @@ public:
   ColorField(EffectRow* parent, const QString& id);
 
   /**
+   * @brief Use a ColorWheel instead of a colour button for this field (XML type "wheel")
+   */
+  void SetWheel(bool wheel);
+
+  /**
    * @brief Get the color value at a given timecode
    *
    * A convenience function, equivalent to GetValueAt(timecode).value<QColor>().
@@ -67,6 +72,7 @@ private slots:
   void UpdateFromWidget(const QColor &c);
 
 private:
+  bool wheel_{false};
   QMetaObject::Connection pick_connection_;
   QMetaObject::Connection cancel_connection_;
   void disconnectPick();

@@ -7,12 +7,18 @@
 #include "panels/panels.h"
 #include "panels/viewer.h"
 #include "ui/colorbutton.h"
+#include "ui/colorwheel.h"
 #include "ui/icons.h"
 #include "ui/viewerwidget.h"
 
 ColorField::ColorField(EffectRow* parent, const QString& id) :
   EffectField(parent, id, EFFECT_FIELD_COLOR)
 {}
+
+void ColorField::SetWheel(bool wheel)
+{
+  wheel_ = wheel;
+}
 
 QColor ColorField::GetColorAt(double timecode)
 {
@@ -26,6 +32,25 @@ void ColorField::disconnectPick() {
 
 QWidget *ColorField::CreateWidget(QWidget *existing)
 {
+  if (wheel_) {
+    QWidget* wheel_wrapper;
+    ColorWheel* wheel;
+    if (existing != nullptr) {
+      wheel_wrapper = existing;
+      wheel = existing->findChild<ColorWheel*>();
+    } else {
+      wheel_wrapper = new QWidget();
+      wheel_wrapper->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
+      QHBoxLayout* wheel_layout = new QHBoxLayout(wheel_wrapper);
+      wheel_layout->setContentsMargins(0, 0, 0, 0);
+      wheel = new ColorWheel();
+      wheel_layout->addWidget(wheel);
+    }
+    if (wheel != nullptr) connect(wheel, &ColorWheel::color_changed, this, &ColorField::UpdateFromWidget);
+    connect(this, &EffectField::EnabledChanged, wheel_wrapper, &QWidget::setEnabled);
+    return wheel_wrapper;
+  }
+
   ColorButton* cb;
   QWidget* wrapper;
 
@@ -82,6 +107,12 @@ QWidget *ColorField::CreateWidget(QWidget *existing)
 
 void ColorField::UpdateWidgetValue(QWidget *widget, double timecode)
 {
+  if (wheel_) {
+    ColorWheel* wheel = widget->findChild<ColorWheel*>();
+    if (wheel != nullptr) wheel->set_color(GetColorAt(timecode));
+    return;
+  }
+
   ColorButton* cb = widget->findChild<ColorButton*>();
   if (cb != nullptr) {
     cb->set_color(GetColorAt(timecode));

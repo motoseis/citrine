@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<effect name="Color Wheels" category="Color">
+	<row name="Lift">
+		<field type="wheel" id="lift_wheel" r="255" g="255" b="255"/>
+	</row>
+	<row name="Lift Master">
+		<field type="double" min="-1" default="0" max="1" id="lift_master"/>
+	</row>
+	<row name="Gamma">
+		<field type="wheel" id="gamma_wheel" r="255" g="255" b="255"/>
+	</row>
+	<row name="Gamma Master">
+		<field type="double" min="-2" default="0" max="2" id="gamma_master"/>
+	</row>
+	<row name="Gain">
+		<field type="wheel" id="gain_wheel" r="255" g="255" b="255"/>
+	</row>
+	<row name="Gain Master">
+		<field type="double" min="-2" default="0" max="2" id="gain_master"/>
+	</row>
+	<shader vert="common.vert" frag="colorwheels.frag"/>
+</effect>

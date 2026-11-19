@@ -93,6 +93,7 @@ struct FieldTypeEntry {
 constexpr FieldTypeEntry kFieldTypes[] = {
     {"DOUBLE", EffectField::EFFECT_FIELD_DOUBLE}, {"BOOL", EffectField::EFFECT_FIELD_BOOL},
     {"COLOR", EffectField::EFFECT_FIELD_COLOR},   {"COMBO", EffectField::EFFECT_FIELD_COMBO},
+    {"WHEEL", EffectField::EFFECT_FIELD_COLOR},  // a colour field shown as a colour wheel
     {"FONT", EffectField::EFFECT_FIELD_FONT},     {"STRING", EffectField::EFFECT_FIELD_STRING},
     {"FILE", EffectField::EFFECT_FIELD_FILE},
 };
@@ -199,6 +200,7 @@ void Effect::parseFieldElement(QXmlStreamReader& reader, EffectRow* row) {
     return;
   }
   int type = -1;
+  bool is_wheel = false;
   QString id;
 
   // Get field type and id from attributes
@@ -206,6 +208,7 @@ void Effect::parseFieldElement(QXmlStreamReader& reader, EffectRow* row) {
   for (const auto& attr : attributes) {
     if (attr.name() == QLatin1String("type")) {
       type = FieldTypeFromString(attr.value().toString().toUpper());
+      is_wheel = (attr.value().toString().compare(QLatin1String("wheel"), Qt::CaseInsensitive) == 0);
     } else if (attr.name() == QLatin1String("id")) {
       id = attr.value().toString();
     }
@@ -234,7 +237,9 @@ void Effect::parseFieldElement(QXmlStreamReader& reader, EffectRow* row) {
     } break;
     case EffectField::EFFECT_FIELD_COLOR: {
       QColor color;
-      field = new ColorField(row, id);
+      ColorField* color_field = new ColorField(row, id);
+      color_field->SetWheel(is_wheel);
+      field = color_field;
       for (const auto& attr : attributes) {
         if (attr.name() == QLatin1String("r")) {
           color.setRed(attr.value().toInt());

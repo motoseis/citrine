@@ -425,6 +425,8 @@ set(OLIVE_SOURCES
   ui/timelinetools.h
   ui/timelinewidget.cpp
   ui/trackheaderwidget.cpp
+  ui/colorwheel.cpp
+  ui/colorwheel.h
   ui/trackheaderwidget.h
   ui/timelinewidget_ghosts.cpp
   ui/timelinewidget_menu.cpp
@@ -456,6 +458,8 @@ set(OLIVE_EFFECTS
   effects/shaders/chromaticaberration.xml
   effects/shaders/colorcorrection.frag
   effects/shaders/colorcorrection.xml
+  effects/shaders/colorwheels.frag
+  effects/shaders/colorwheels.xml
   effects/shaders/colorsel.frag
   effects/shaders/colorsel.xml
   effects/shaders/common.frag
